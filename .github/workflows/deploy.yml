@@ -2,9 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["main"] # Alebo "master", podľa názvu vašej hlavnej vetvy
-
-  # Umožňuje manuálne spustenie z Actions tabu
+    branches: ["main"] # Alebo "master"
   workflow_dispatch:
 
 permissions:
@@ -28,10 +26,10 @@ jobs:
 
       - name: Inject Firebase Configuration
         run: |
-          # Skopírujeme šablónu do finálneho súboru
+          # 1. Copy template to the final filename
           cp js/config.template.js js/config.js
           
-          # Nahradíme placeholdery skutočnými hodnotami zo Secrets
+          # 2. Replace placeholders with Secrets
           sed -i "s|FIREBASE_API_KEY_PLACEHOLDER|${{ secrets.FIREBASE_API_KEY }}|g" js/config.js
           sed -i "s|FIREBASE_AUTH_DOMAIN_PLACEHOLDER|${{ secrets.FIREBASE_AUTH_DOMAIN }}|g" js/config.js
           sed -i "s|FIREBASE_PROJECT_ID_PLACEHOLDER|${{ secrets.FIREBASE_PROJECT_ID }}|g" js/config.js
@@ -39,7 +37,7 @@ jobs:
           sed -i "s|FIREBASE_MESSAGING_SENDER_ID_PLACEHOLDER|${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}|g" js/config.js
           sed -i "s|FIREBASE_APP_ID_PLACEHOLDER|${{ secrets.FIREBASE_APP_ID }}|g" js/config.js
           
-          # Pre kontrolu vypíšeme, či súbor existuje (nevypisujeme obsah kvôli bezpečnosti logov)
+          # 3. Verify file creation (list file only, do not cat content)
           ls -l js/config.js
 
       - name: Setup Pages
