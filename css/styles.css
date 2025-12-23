@@ -163,8 +163,8 @@ input:focus, select:focus {
 }
 
 .sidebar-header {
-    height: 70px;
-    padding: 0 1.5rem;
+    height: auto;
+    padding: 2rem 1.5rem;
     display: flex;
     align-items: center;
     gap: 0.75rem;
