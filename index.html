@@ -483,20 +483,27 @@
                         </div>
 
                         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button id="generateReportBtn" class="btn btn-primary" style="width: auto;">Generovať</button>
-                            <button id="showChartBtn" class="btn btn-purple">Zobraziť Graf</button>
-                            <button id="exportPdfBtn" class="btn btn-secondary"><i class="fa-regular fa-file-pdf"></i> PDF</button>
-                            <button id="exportExcelBtn" class="btn btn-success"><i class="fa-regular fa-file-excel"></i> Excel</button>
-                        </div>
+                        <button id="generateReportBtn" class="btn btn-primary" style="width: auto;">Generovať</button>
+                        <button id="showChartBtn" class="btn btn-purple">Zobraziť Graf</button>
+                        <button id="exportPdfBtn" class="btn btn-secondary"><i class="fa-regular fa-file-pdf"></i> PDF</button>
+                        <button id="exportExcelBtn" class="btn btn-success"><i class="fa-regular fa-file-excel"></i> Excel</button>
+                        <button id="exportTaxDraftBtn" class="btn btn-purple"><i class="fa-solid fa-file-invoice-dollar"></i> Daňový Draft (PDF)</button>
                     </div>
 
                     <div id="chartContainer" class="card hidden">
-                        <canvas id="reportChart"></canvas>
+                        <div class="grid-2">
+                            <div style="min-height: 300px;">
+                                <h4 class="text-center mb-2" style="font-size: 0.8rem; color: var(--text-muted);">MESAČNÝ PREHĽAD</h4>
+                                <canvas id="reportChart"></canvas> </div>
+                            <div style="min-height: 300px;">
+                                <h4 class="text-center mb-2" style="font-size: 0.8rem; color: var(--text-muted);">ROZDELENIE VÝDAVKOV</h4>
+                                <canvas id="categoryPieChart"></canvas> </div>
+                        </div>
                     </div>
 
                     <div id="reportContent" class="card" style="overflow-x: auto;"></div>
                 </div>
-
+            </div>
                 <div id="settingsView" class="view">
                     <div class="card" style="max-width: 600px; margin: 0 auto;">
                         <h2 class="mb-4" style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">Používateľské nastavenia</h2>
