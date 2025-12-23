@@ -3,6 +3,7 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https:/
 import { collection, query, where, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import modulov
+import { setupImportEvents } from './views/import.js';
 import { renderDashboard } from './views/dashboard.js';
 import { setupBudgetEvents, loadBudget } from './views/budget.js';
 import { setupTransactionEvents, renderTransactions } from './views/transactions.js';
@@ -24,6 +25,7 @@ onAuthStateChanged(auth, (user) => {
         currentUser = user;
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('mainApp').style.display = 'flex';
+        setupImportEvents(db, currentUser, refreshData);
         refreshData();
     } else {
         currentUser = null;
