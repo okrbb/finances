@@ -1,253 +1,115 @@
 /* js/views/reports.js */
-import { formatDate } from '../utils.js';
+import { formatDate, calculateTaxStats } from '../utils.js';
 
 let chartInstance = null;
+let pieChartInstance = null;
 
-// Definícia mapovania názvov kategórií pre zobrazenie
+// Mapovanie systémových kategórií na čitateľné názvy pre reporty
 const categoryMap = {
     "VD - Telekom": "VD - internet",
-    "VD - 4ka": "VD - TV"
+    "VD - 4ka": "VD - TV",
+    "PD - mzda": "Mzda",
+    "PD - prenájom": "Prenájom",
+    "PN - výsluhový dôchodok": "Dôchodok",
+    "VD - bytové družstvo": "Nájomné (BD)",
+    "VD - MsÚ Trnava": "Daň z nehnuteľnosti",
+    "VD - ZSE": "Elektrina",
+    "VD - poistenie": "Odvody",
+    "VD - preddavok na daň": "Preddavok na daň",
+    "VD - DDS": "DDS",
+    "VD - iné": "Iné výdavky"
 };
 
 export function setupReportEvents(db, getTransactionsCallback) {
-    // 1. Generovať tlačidlo (manuálny refresh)
+    // Generovanie a filtre
     document.getElementById('generateReportBtn').addEventListener('click', () => {
         refreshAll(getTransactionsCallback);
     });
 
-    // 2. Checkbox filtre - OKAMŽITÁ REAKCIA
     document.querySelectorAll('.report-cat-filter').forEach(cb => {
         cb.addEventListener('change', () => {
             refreshAll(getTransactionsCallback);
         });
     });
 
-    // 3. Prepínanie Grafu
+    // Prepínanie zobrazenia grafov
     document.getElementById('showChartBtn').addEventListener('click', (e) => {
         const container = document.getElementById('chartContainer');
         if (container.classList.contains('hidden')) {
             container.classList.remove('hidden');
-            e.target.textContent = 'Skryť Graf';
-            renderChart(getTransactionsCallback());
+            e.target.textContent = 'Skryť Grafy';
+            renderCharts(getTransactionsCallback());
         } else {
             container.classList.add('hidden');
-            e.target.textContent = 'Zobraziť Graf';
+            e.target.textContent = 'Zobraziť Grafy';
         }
     });
-    
-    // 4. Export Excel (XLSX)
+
+    // Export Excel
     document.getElementById('exportExcelBtn').addEventListener('click', () => {
         const transactions = getTransactionsCallback();
         const filtered = filterTransactions(transactions);
-        
-        if (filtered.length === 0) {
-            alert("Žiadne dáta na export.");
-            return;
-        }
+        if (filtered.length === 0) return alert("Žiadne dáta na export.");
 
-        // Príprava dát pre Excel
-        const dataForExcel = filtered.map(tx => {
-            let formattedDate = '';
-            if (tx.date) {
-                formattedDate = tx.date.split('-').reverse().join('.');
-            }
-
-            // Použitie mapy pre krajší názov kategórie
-            const displayCategory = categoryMap[tx.category] || tx.category;
-
-            return {
-                Dátum: formattedDate,
-                Druh: tx.type,
-                Kategória: displayCategory,
-                Poznámka: tx.note || '',
-                Suma: parseFloat(tx.amount)
-            };
-        });
+        const dataForExcel = filtered.map(tx => ({
+            Dátum: tx.date ? tx.date.split('-').reverse().join('.') : '',
+            Druh: tx.type,
+            Kategória: categoryMap[tx.category] || tx.category,
+            Poznámka: tx.note || '',
+            Suma: parseFloat(tx.amount)
+        }));
 
         const ws = XLSX.utils.json_to_sheet(dataForExcel);
-
-        // Nastavenie šírky stĺpcov
-        ws['!cols'] = [
-            { wch: 13 }, // Dátum
-            { wch: 9 },  // Druh
-            { wch: 27 }, // Kategória
-            { wch: 27 }, // Poznámka
-            { wch: 9 }   // Suma
-        ];
-
-        // Zapnutie Filtrov a formátovanie meny
-        if (ws['!ref']) {
-            ws['!autofilter'] = { ref: ws['!ref'] };
-            
-            const range = XLSX.utils.decode_range(ws['!ref']);
-            for (let R = range.s.r + 1; R <= range.e.r; ++R) {
-                const address = XLSX.utils.encode_cell({ r: R, c: 4 }); // Stĺpec Suma
-                if (ws[address]) {
-                    ws[address].z = '#,##0.00 "€"';
-                }
-            }
-        }
-
+        ws['!cols'] = [{ wch: 13 }, { wch: 9 }, { wch: 27 }, { wch: 27 }, { wch: 9 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Report");
-        const { dateFrom, dateTo } = getFilters();
-        XLSX.writeFile(wb, `Report_${dateFrom}_${dateTo}.xlsx`);
+        XLSX.writeFile(wb, `Report_${getFilters().dateFrom}.xlsx`);
     });
 
-    // 5. Export PDF - PROFESIONÁLNA VERZIA (pdfMake)
+    // Export Štandardné PDF
     document.getElementById('exportPdfBtn').addEventListener('click', () => {
-        // 1. Zber údajov o používateľovi
-        const userName = document.getElementById('settingsName').value || 'Meno Priezvisko';
-        const userDic = document.getElementById('settingsDIC').value || '-';
-        const userAddress = document.getElementById('settingsAddress').value || '-';
-        const userIBAN = document.getElementById('settingsIBAN').value || '-';
-        const dateFrom = formatDate(document.getElementById('reportDateFrom').value);
-        const dateTo = formatDate(document.getElementById('reportDateTo').value);
-
-        // 2. Získanie a filtrovanie transakcií
         const allTransactions = getTransactionsCallback();
         const filteredTx = filterTransactions(allTransactions);
+        if (filteredTx.length === 0) return alert("Žiadne dáta.");
 
-        if (filteredTx.length === 0) {
-            alert("Žiadne dáta na export.");
-            return;
-        }
+        const tableBody = [[
+            { text: 'Dátum', style: 'tableHeader' },
+            { text: 'Druh', style: 'tableHeader' },
+            { text: 'Kategória', style: 'tableHeader' },
+            { text: 'Popis', style: 'tableHeader' },
+            { text: 'Suma', style: 'tableHeader', alignment: 'right' }
+        ]];
 
-        // 3. Príprava tela tabuľky pre PDF
-        const tableBody = [
-            [
-                { text: 'Dátum', style: 'tableHeader' },
-                { text: 'Druh', style: 'tableHeader' },
-                { text: 'Kategória', style: 'tableHeader' },
-                { text: 'Popis', style: 'tableHeader' },
-                { text: 'Suma', style: 'tableHeader', alignment: 'right' }
-            ]
-        ];
-
-        // Naplnenie dátami
-        let totalSum = 0;
         filteredTx.forEach(tx => {
-            const isIncome = tx.type === 'Príjem';
-            const amount = parseFloat(tx.amount);
-            if (isIncome) totalSum += amount; else totalSum -= amount;
-
-            // Použitie mapy pre krajší názov kategórie v PDF
-            const displayCategory = categoryMap[tx.category] || tx.category || '-';
-
             tableBody.push([
                 { text: formatDate(tx.date), fontSize: 10 },
                 { text: tx.type, fontSize: 10 },
-                { text: displayCategory, fontSize: 10 },
+                { text: categoryMap[tx.category] || tx.category || '-', fontSize: 10 },
                 { text: tx.note || '-', fontSize: 10 },
-                { 
-                    text: amount.toFixed(2) + ' €', 
-                    alignment: 'right', 
-                    fontSize: 10,
-                    color: isIncome ? '#059669' : '#dc2626',
-                    bold: true
-                }
+                { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 10, bold: true }
             ]);
         });
 
-        // 4. Definícia dokumentu (JSON štruktúra)
-        const docDefinition = {
-            info: {
-                title: 'Finančný Report',
-                author: userName,
-            },
-            content: [
-                // Hlavička dokumentu
-                {
-                    columns: [
-                        {
-                            width: '*',
-                            text: [
-                                { text: userName + '\n', style: 'headerName' },
-                                { text: userAddress + '\n', style: 'small' },
-                                { text: 'DIČ: ' + userDic + '\n', style: 'small' },
-                                { text: 'IBAN: ' + userIBAN, style: 'small' }
-                            ]
-                        },
-                        {
-                            width: 'auto',
-                            text: [
-                                { text: 'FINANČNÝ REPORT\n', style: 'headerTitle', alignment: 'right' },
-                                { text: `Obdobie: ${dateFrom} - ${dateTo}\n`, style: 'small', alignment: 'right' },
-                                { text: `Generované: ${new Date().toLocaleDateString('sk-SK')}`, style: 'small', alignment: 'right' }
-                            ]
-                        }
-                    ]
-                },
-                { text: '', margin: [0, 10, 0, 10] }, // Medzera
-                
-                // Čiara
-                { canvas: [{ type: 'line', x1: 0, y1: 5, x2: 515, y2: 5, lineWidth: 1, lineColor: '#e2e8f0' }] },
-                
-                { text: '', margin: [0, 10, 0, 10] }, // Medzera
-
-                // Súhrn (Bilancia)
-                {
-                    style: 'summaryBox',
-                    table: {
-                        widths: ['*'],
-                        body: [
-                            [{ 
-                                text: `VÝSLEDNÁ BILANCIA: ${totalSum.toFixed(2)} €`, 
-                                alignment: 'center', 
-                                fontSize: 14, 
-                                bold: true, 
-                                color: totalSum >= 0 ? '#059669' : '#dc2626',
-                                fillColor: '#f8fafc'
-                            }]
-                        ]
-                    },
-                    layout: 'noBorders'
-                },
-
-                { text: 'Detailný výpis transakcií', style: 'subheader', margin: [0, 20, 0, 10] },
-
-                // Hlavná tabuľka
-                {
-                    table: {
-                        headerRows: 1, // Opakovanie hlavičky na novej strane
-                        widths: ['auto', 'auto', '*', '*', 'auto'], // Šírky stĺpcov
-                        body: tableBody
-                    },
-                    layout: {
-                        hLineWidth: function (i, node) { return (i === 0 || i === node.table.body.length) ? 2 : 1; },
-                        vLineWidth: function (i, node) { return 0; }, // Bez vertikálnych čiar
-                        hLineColor: function (i, node) { return (i === 0 || i === node.table.body.length) ? '#334155' : '#e2e8f0'; },
-                        paddingLeft: function(i, node) { return 8; },
-                        paddingRight: function(i, node) { return 8; },
-                        paddingTop: function(i, node) { return 6; },
-                        paddingBottom: function(i, node) { return 6; }
-                    }
-                }
-            ],
-            styles: {
-                headerName: { fontSize: 16, bold: true, margin: [0, 0, 0, 5] },
-                headerTitle: { fontSize: 14, bold: true, color: '#334155' },
-                subheader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] },
-                small: { fontSize: 9, color: '#64748b' },
-                tableHeader: { bold: true, fontSize: 10, color: 'black', fillColor: '#f1f5f9' },
-                summaryBox: { margin: [0, 10, 0, 10] }
-            },
-            defaultStyle: {
-                font: 'Roboto'
-            }
+        const docDef = {
+            content: [{ text: 'FINANČNÝ REPORT', style: 'headerTitle' }, { table: { body: tableBody } }],
+            styles: { headerTitle: { fontSize: 14, bold: true }, tableHeader: { bold: true, fillColor: '#f1f5f9' } }
         };
+        pdfMake.createPdf(docDef).download('Report.pdf');
+    });
 
-        pdfMake.createPdf(docDefinition).download(`Report_${document.getElementById('reportDateFrom').value}.pdf`);
+    // NOVÉ: Export Daňového draftu
+    document.getElementById('exportTaxDraftBtn')?.addEventListener('click', () => {
+        const transactions = getTransactionsCallback();
+        const stats = calculateTaxStats(transactions);
+        exportTaxDraftPdf(stats);
     });
 }
 
-// Pomocná funkcia na refresh všetkého naraz
 function refreshAll(getTransactionsCallback) {
     const txs = getTransactionsCallback();
     updateReportUI(txs);
-    
     if (!document.getElementById('chartContainer').classList.contains('hidden')) {
-        renderChart(txs);
+        renderCharts(txs);
     }
 }
 
@@ -255,59 +117,41 @@ function getFilters() {
     const dateFrom = document.getElementById('reportDateFrom').value;
     const dateTo = document.getElementById('reportDateTo').value;
     const typeFilter = document.getElementById('reportTypeFilter').value;
-    
-    const checkboxes = document.querySelectorAll('.report-cat-filter:checked');
-    const selectedCategories = Array.from(checkboxes).map(cb => cb.value);
-    
+    const selectedCategories = Array.from(document.querySelectorAll('.report-cat-filter:checked')).map(cb => cb.value);
     return { dateFrom, dateTo, typeFilter, selectedCategories };
 }
 
 function filterTransactions(transactions) {
     const { dateFrom, dateTo, typeFilter, selectedCategories } = getFilters();
-    
     return transactions.filter(tx => {
         const txDate = new Date(tx.date);
         const from = dateFrom ? new Date(dateFrom) : new Date('1900-01-01');
         const to = dateTo ? new Date(dateTo) : new Date('2100-01-01');
-        
-        // 1. Filter Dátumu
         if (txDate < from || txDate > to) return false;
-        
-        // 2. Filter Druhu (Príjem/Výdaj)
-        if (typeFilter && typeFilter !== 'all' && tx.type !== typeFilter) return false;
-
-        // 3. Filter Kategórií (Checkbox)
+        if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
         if (selectedCategories.length === 0) return false;
 
         const cat = (tx.category || '').toLowerCase();
         let match = false;
-
-        // Logika pre jednotlivé checkboxy
         if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('dôchodok'))) match = true;
         if (selectedCategories.includes('prenajom') && cat.includes('prenájom')) match = true;
         if (selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
         if (selectedCategories.includes('byvanie') && (cat.includes('bytové') || cat.includes('msú'))) match = true;
         if (selectedCategories.includes('energie') && (cat.includes('zse') || cat.includes('elektrina'))) match = true;
-        
-        // OPRAVA PRE TV / INTERNET
         if (selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
-        
         if (selectedCategories.includes('ine') && cat.includes('iné')) match = true;
-        
         return match;
     }).sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
 function updateReportUI(allTransactions) {
     const filtered = filterTransactions(allTransactions);
-    const { dateFrom, dateTo } = getFilters();
-    
     let totalIncome = 0, totalExpense = 0;
     filtered.forEach(tx => tx.type === 'Príjem' ? totalIncome += tx.amount : totalExpense += tx.amount);
-    
+
     let html = `
         <div class="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <h3 class="font-bold text-slate-700 mb-2">Súhrn (${formatDate(dateFrom)} - ${formatDate(dateTo)})</h3>
+            <h3 class="font-bold text-slate-700 mb-2">Súhrn</h3>
             <div class="flex gap-6 flex-wrap">
                 <div class="text-green-600 font-bold">Príjmy: ${totalIncome.toFixed(2)} €</div>
                 <div class="text-red-500 font-bold">Výdavky: ${totalExpense.toFixed(2)} €</div>
@@ -315,35 +159,25 @@ function updateReportUI(allTransactions) {
             </div>
         </div>
         <table class="w-full text-sm text-left mt-4">
-            <thead class="bg-slate-100 text-slate-700 uppercase text-xs">
-                <tr><th>Dátum</th><th>Druh</th><th>Kategória</th><th>Popis</th><th class="text-right">Suma</th></tr>
-            </thead>
-            <tbody class="divide-y divide-slate-100">`;
+            <thead><tr class="bg-slate-100"><th>Dátum</th><th>Kategória</th><th>Popis</th><th class="text-right">Suma</th></tr></thead>
+            <tbody>`;
 
-    if (filtered.length === 0) html += '<tr><td colspan="5" class="text-center py-4">Žiadne dáta</td></tr>';
+    if (filtered.length === 0) html += '<tr><td colspan="4" class="text-center py-4">Žiadne dáta</td></tr>';
     else {
         filtered.forEach(tx => {
-            const colorClass = tx.type === 'Príjem' ? 'text-green-600' : 'text-red-500';
-            
-            // Použitie mapy pre krajší názov v HTML tabuľke
-            const displayCategory = categoryMap[tx.category] || tx.category;
-
-            html += `
-            <tr>
+            html += `<tr>
                 <td class="py-2">${formatDate(tx.date)}</td>
-                <td>${tx.type}</td>
-                <td>${displayCategory}</td>
+                <td>${categoryMap[tx.category] || tx.category}</td>
                 <td>${tx.note || '-'}</td>
-                <td class="text-right font-bold ${colorClass}">${tx.amount.toFixed(2)} €</td>
+                <td class="text-right font-bold ${tx.type === 'Príjem' ? 'text-green-600' : 'text-red-500'}">${tx.amount.toFixed(2)} €</td>
             </tr>`;
         });
     }
-    html += '</tbody></table>';
-    
-    document.getElementById('reportContent').innerHTML = html;
+    document.getElementById('reportContent').innerHTML = html + '</tbody></table>';
 }
 
-function renderChart(allTransactions) {
+// NOVÉ: Grafy s Drill-down funkcionalitou
+function renderCharts(allTransactions) {
     const filtered = filterTransactions(allTransactions);
     const monthlyData = {};
 
@@ -351,30 +185,94 @@ function renderChart(allTransactions) {
         const d = new Date(tx.date);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!monthlyData[key]) monthlyData[key] = { income: 0, expense: 0 };
-        
-        if (tx.type === 'Príjem') monthlyData[key].income += tx.amount;
-        else monthlyData[key].expense += tx.amount;
+        tx.type === 'Príjem' ? monthlyData[key].income += tx.amount : monthlyData[key].expense += tx.amount;
     });
 
     const sortedKeys = Object.keys(monthlyData).sort();
-    const labels = sortedKeys.map(k => k.split('-').reverse().join('/')); 
-    const incomeData = sortedKeys.map(k => monthlyData[k].income);
-    const expenseData = sortedKeys.map(k => monthlyData[k].expense);
-    const balanceData = sortedKeys.map(k => monthlyData[k].income - monthlyData[k].expense);
+    const labels = sortedKeys.map(k => k.split('-').reverse().join('/'));
 
     if (chartInstance) chartInstance.destroy();
-    
     const ctx = document.getElementById('reportChart').getContext('2d');
     chartInstance = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
             datasets: [
-                { label: 'Bilancia', data: balanceData, type: 'line', borderColor: '#1e293b', borderWidth: 3, tension: 0.3, order: 0 },
-                { label: 'Príjmy', data: incomeData, backgroundColor: 'rgba(16, 185, 129, 0.7)', order: 1 },
-                { label: 'Výdavky', data: expenseData, backgroundColor: 'rgba(239, 68, 68, 0.7)', order: 2 }
+                { label: 'Príjmy', data: sortedKeys.map(k => monthlyData[k].income), backgroundColor: '#10b981' },
+                { label: 'Výdavky', data: sortedKeys.map(k => monthlyData[k].expense), backgroundColor: '#ef4444' }
             ]
         },
-        options: { responsive: true }
+        options: {
+            responsive: true,
+            onClick: (e, activeEls) => {
+                if (activeEls.length > 0) {
+                    const index = activeEls[0].index;
+                    const [m, y] = labels[index].split('/');
+                    document.getElementById('reportDateFrom').value = `${y}-${m}-01`;
+                    document.getElementById('reportDateTo').value = new Date(y, m, 0).toISOString().split('T')[0];
+                    refreshAll(() => allTransactions);
+                }
+            }
+        }
     });
+
+    renderPieChart(filtered);
+}
+
+function renderPieChart(filteredTransactions) {
+    const expenses = filteredTransactions.filter(tx => tx.type === 'Výdaj');
+    const catData = {};
+    expenses.forEach(tx => {
+        const cat = categoryMap[tx.category] || tx.category || 'Iné';
+        catData[cat] = (catData[cat] || 0) + tx.amount;
+    });
+
+    if (pieChartInstance) pieChartInstance.destroy();
+    const ctx = document.getElementById('categoryPieChart').getContext('2d');
+    pieChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(catData),
+            datasets: [{
+                data: Object.values(catData),
+                backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#64748b']
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+}
+
+function exportTaxDraftPdf(stats) {
+    const userName = document.getElementById('settingsName').value;
+    const year = document.getElementById('settingsYear').value;
+
+    const docDefinition = {
+        content: [
+            { text: `DRAFT PODKLADOV K DAŇOVÉMU PRIZNANIU (${year})`, style: 'header' },
+            { text: `Daňovník: ${userName}`, margin: [0, 0, 0, 20] },
+            { text: 'TABUĽKA Č. 1: PRÍJMY Z PRENÁJMU (§ 6 ods. 3)', style: 'subheader' },
+            {
+                table: {
+                    widths: ['*', 'auto'],
+                    body: [
+                        ['Brutto príjmy z prenájmu', `${stats.rentIncome.toFixed(2)} €`],
+                        ['Oslobodenie (§ 9 ods. 1 písm. g)', '- 500.00 €'],
+                        [{ text: 'Zdaniteľný príjem z prenájmu', bold: true }, { text: `${stats.taxBaseRent.toFixed(2)} €`, bold: true }]
+                    ]
+                }
+            },
+            { text: '\nSÚHRN PRE TYP B', style: 'subheader' },
+            {
+                table: {
+                    widths: ['*', 'auto'],
+                    body: [
+                        ['Základ dane (Mzda + Prenájom)', `${stats.taxBase.toFixed(2)} €`],
+                        [{ text: 'PREDPOKLADANÁ DAŇ (19%)', bold: true }, { text: `${(stats.taxBase * 0.19).toFixed(2)} €`, bold: true }]
+                    ]
+                }
+            }
+        ],
+        styles: { header: { fontSize: 16, bold: true }, subheader: { fontSize: 12, bold: true, color: '#2563eb' } }
+    };
+    pdfMake.createPdf(docDefinition).download(`Danovy_Draft_${year}.pdf`);
 }
