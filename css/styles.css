@@ -73,9 +73,8 @@ h1, h2, h3, h4 {
 }
 
 .login-icon {
-    width: 64px;
-    height: 64px;
-    background: linear-gradient(135deg, var(--primary), var(--purple));
+    width: 90px;
+    height: 90px;
     border-radius: 16px;
     display: flex;
     align-items: center;
