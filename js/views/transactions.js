@@ -1,3 +1,6 @@
+// js/views/transactions.js
+
+import { showToast } from '../notifications.js';
 import { collection, addDoc, deleteDoc, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 let editingTransactionId = null;
@@ -74,34 +77,58 @@ export function setupTransactionEvents(db, getUserCallback, refreshDataCallback)
 }
 
 async function handleFormSubmit(e, user, db, refreshCallback) {
+    // Zhromaždenie dát z formulára
     const txData = {
         uid: user.uid,
         date: document.getElementById('txDate').value,
         number: document.getElementById('txNumber').value,
         type: document.getElementById('txType').value,
         account: document.getElementById('txAccount').value,
-        category: document.getElementById('txCategory').value, // Ukladá sa hodnota z VALUE (napr. VD - Telekom)
+        category: document.getElementById('txCategory').value, 
         note: document.getElementById('txNote').value,
         amount: parseFloat(document.getElementById('txAmount').value),
     };
 
+    // Základná validácia pred odoslaním
+    if (isNaN(txData.amount) || txData.amount <= 0) {
+        showToast("Zadajte platnú sumu vyššiu ako 0", "warning");
+        return;
+    }
+
     try {
         if (editingTransactionId) {
+            // Režim úpravy existujúcej transakcie
             await updateDoc(doc(db, "transactions", editingTransactionId), txData);
+            
+            showToast("Transakcia bola úspešne aktualizovaná", "success");
+            
             editingTransactionId = null;
-            resetSubmitButton();
+            resetSubmitButton(); // Funkcia definovaná v transactions.js
         } else {
+            // Režim pridania novej transakcie
             txData.createdAt = new Date();
             await addDoc(collection(db, "transactions"), txData);
             
-            if (txData.category === 'PD - mzda' && txData.type === 'Príjem' && confirm("Pridať automatické odvody a daň?")) {
-                 await generateAutoTaxes(txData, user, db);
+            showToast("Nová transakcia bola pridaná", "success");
+            
+            // Špeciálna logika pre automatické odvody
+            if (txData.category === 'PD - mzda' && txData.type === 'Príjem') {
+                // Confirm ponechávame, pretože vyžaduje interakciu (Áno/Nie)
+                if (confirm("Pridať automatické odvody a daň k tejto mzde?")) {
+                    await generateAutoTaxes(txData, user, db);
+                    showToast("Automatické odvody boli vygenerované", "success");
+                }
             }
         }
+
+        // Reset formulára a refresh dát v UI
         e.target.reset();
         refreshCallback(); 
+
     } catch (error) {
-        alert("Chyba: " + error.message);
+        // Nahradenie alertu toastom pre chyby
+        console.error("Firestore error:", error);
+        showToast("Chyba pri ukladaní: " + error.message, "danger");
     }
 }
 

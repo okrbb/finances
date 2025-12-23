@@ -1,7 +1,8 @@
+// js/views/settings.js
+
+import { showToast } from '../notifications.js';
 import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
-// --- 1. Setup Events (Volané raz pri štarte) ---
-// Prijíma callback na získanie aktuálneho užívateľa, pretože pri štarte ešte nemusí byť prihlásený
 export function initSettings(db, getUserCallback) {
     const settingsForm = document.getElementById('settingsForm');
 
@@ -25,11 +26,10 @@ export function initSettings(db, getUserCallback) {
             
             try {
                 await setDoc(doc(db, "users", user.uid), userData);
-                alert("Nastavenia úspešne uložené");
-                // Po uložení obnovíme zobrazenie (sidebar atď.)
+                showToast("Nastavenia úspešne uložené", "success");
                 loadUserProfile(user, db); 
             } catch (err) {
-                alert("Chyba pri ukladaní: " + err.message);
+                showToast("Chyba pri ukladaní: " + err.message, "danger");
             }
         });
     }

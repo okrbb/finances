@@ -1,3 +1,6 @@
+// js/views/budget.js
+
+import { showToast } from '../notifications.js';
 import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // --- 1. Event Setup (Volané raz z app.js) ---
@@ -283,7 +286,7 @@ async function performCopy(user, db) {
             setDoc(doc(db, 'budgets', `${user.uid}_${targetDate}`), dataToCopy, { merge: true })
         );
         await Promise.all(promises);
-        alert(`Úspešne skopírované.`);
+        showToast(`Úspešne skopírované do vybraných mesiacov`, "success");
         document.getElementById('copyModal').style.display = 'none';
     } catch (error) {
         console.error(error);
