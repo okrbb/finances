@@ -662,3 +662,32 @@ input:checked ~ .checkmark:after {
     background: #cbd5e1;
     border-radius: 10px;
 }
+
+/* Layout pre kalkuláciu a bočné karty */
+.dashboard-main-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr; /* Kalkulácia je širšia (2 diely), štatistiky užšie (1 diel) */
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+    align-items: start;
+}
+
+/* Stĺpec s kartami pod sebou */
+.dashboard-side-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 4.5rem;
+}
+
+/* Zachovanie marginu pre karty vo vnútri */
+.dashboard-side-stats .card {
+    margin-bottom: 0; 
+    padding: 1.5rem;
+}
+
+/* Responzivita - na tabletoch a mobiloch pôjdu pod seba */
+@media (max-width: 1024px) {
+    .dashboard-main-grid {
+        grid-template-columns: 1fr;
+    }
+}
