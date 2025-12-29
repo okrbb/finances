@@ -1,8 +1,8 @@
 // js/views/dashboard.js
 import { updateElement, calculateTaxStats } from '../utils.js';
 
-export function renderDashboard(transactions) {
-    const stats = calculateTaxStats(transactions);
+export function renderDashboard(transactions, config) {
+    const stats = calculateTaxStats(transactions, config);
     
     updateElement('summaryIncome', stats.income);
     updateElement('summaryRent', stats.rentIncome);
