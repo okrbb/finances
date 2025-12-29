@@ -1,4 +1,4 @@
-const CACHE_NAME = 'danova-evidencia-v1';
+const CACHE_NAME = 'danova-evidencia-v3';
 
 // Zoznam súborov na statické cachovanie
 const ASSETS_TO_CACHE = [
@@ -18,6 +18,7 @@ const ASSETS_TO_CACHE = [
     './js/views/reports.js',
     './js/views/settings.js',
     './js/views/import.js',
+    './js/views/salaryImport.js',
     './manifest.json'
 ];
 
@@ -55,32 +56,24 @@ self.addEventListener('activate', (event) => {
 
 // 3. Fetch stratégia - Cache First, potom Network
 self.addEventListener('fetch', (event) => {
-    // Ignorujeme requesty na Firebase Auth/Firestore, tie si rieši SDK samo
     if (event.request.url.includes('firestore.googleapis.com') || 
         event.request.url.includes('identitytoolkit.googleapis.com')) {
         return;
     }
 
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            // Ak máme v cache (napr. logo DE.png), vrátime ho hneď
-            if (cachedResponse) {
-                return cachedResponse;
-            }
-
-            // Inak stiahneme zo siete
-            return fetch(event.request).then((networkResponse) => {
-                // Ak je to platný request, pridáme ho do cache pre nabudúce
-                if (networkResponse && networkResponse.status === 200) {
-                    const responseToCache = networkResponse.clone();
-                    caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseToCache);
-                    });
-                }
-                return networkResponse;
-            });
-        }).catch(() => {
-            // Tu môžeš pridať fallback pre offline režim
-        })
+        // ZMENA: Skúsime najprv sieť, ak zlyhá (offline), použijeme cache
+        fetch(event.request)
+            .then((networkResponse) => {
+                return caches.open(CACHE_NAME).then((cache) => {
+                    // Uložíme čerstvú kópiu do cache pre nabudúce
+                    cache.put(event.request, networkResponse.clone());
+                    return networkResponse;
+                });
+            })
+            .catch(() => {
+                // Ak sme offline, skúsime nájsť v cache
+                return caches.match(event.request);
+            })
     );
 });
