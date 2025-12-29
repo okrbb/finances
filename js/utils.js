@@ -14,7 +14,7 @@ export function formatDate(dateString) {
 }
 
 // Tu je vaša funkcia calculateTaxStats (extrahovaná)
-export function calculateTaxStats(transactions) {
+export function calculateTaxStats(transactions, config = { rentExemption: 500, taxRate: 0.19 }) {
     let income = 0; 
     let rentIncome = 0; 
     let expenses = 0; 
@@ -47,7 +47,7 @@ export function calculateTaxStats(transactions) {
         }
     });
 
-    const RENT_EXEMPTION = 500;
+    const RENT_EXEMPTION = config.rentExemption;
     let taxableRentIncome = 0;    
     let deductibleRentExpenses = 0;
 
@@ -56,7 +56,7 @@ export function calculateTaxStats(transactions) {
         deductibleRentExpenses = 0;
     } else {
         taxableRentIncome = rentIncome - RENT_EXEMPTION;
-        const ratio = taxableRentIncome / rentIncome;
+        const ratio = rentIncome > 0 ? (taxableRentIncome / rentIncome) : 0;
         deductibleRentExpenses = rentExpenses * ratio;
     }
 
@@ -67,7 +67,7 @@ export function calculateTaxStats(transactions) {
 
     const partialTaxBaseWage = income - insurance; 
     const finalTaxBase = partialTaxBaseWage + taxBaseRent - dds; 
-    const taxToPay = (finalTaxBase * 0.19) - taxAdvance;
+    const taxToPay = (finalTaxBase * config.taxRate) - taxAdvance;
 
     const totalRealIncome = rentIncome + income + pension;
     const profitBeforeTax = totalRealIncome - expenses;
