@@ -23,6 +23,7 @@ export function setupSalaryImport(db, user, refreshCallback) {
                 const textContent = await page.getTextContent();
                 const fullText = textContent.items.map(item => item.str).join(' ');
 
+                // HLAVNÁ ZMENA: Volanie novej robustnej funkcie
                 const extracted = parseSalaryText(fullText);
                 preparePreview(extracted, previewList, modal);
             } catch (err) {
@@ -59,28 +60,15 @@ export function setupSalaryImport(db, user, refreshCallback) {
 }
 
 function parseSalaryText(text) {
-    // OPRAVA: Odstránime bodky (tisíce) aj medzery, potom zmeníme čiarku na bodku
+    // Odstráni tisíce (bodky), medzery a nahradí desatinnú čiarku bodkou
     const cleanNum = (val) => {
         if (!val) return 0;
         let cleaned = val.replace(/[.\s\u00A0]/g, '').replace(',', '.');
         return parseFloat(cleaned) || 0;
     };
     
-    // Extrakcia hrubého príjmu - robustnejší regex
-    const grossMatch = text.match(/HRUBÝ PRÍJEM\s+([\d\s,.]+)/i);
-    
-    // Extrakcia poistného a dane z dolnej tabuľky
-    // Na páske je text: |Poistné |Nez.časť|Daň pre.|... a pod tým | 423,07 | | 519,52 |
-    // Po zlúčení textu hľadáme čísla, ktoré nasledujú po hlavičkách
-    const insuranceMatch = text.match(/Poistné\s*\|[^|]*\|[^|]*\|[^|]*\|\s*\|\s*([\d\s,.]+)\s*\|/i);
-    // Alternatívny pokus pre poistné ak je tabuľka v kope:
-    const insuranceAlt = text.match(/Poistné\s*\|\s*Nez\.časť\s*\|\s*Daň pre\.\s*\|\s*OdpPolZp\s*\|\s*\|\s*([\d\s,.]+)/i);
-    
-    const taxMatch = text.match(/Daň pre\.\s*\|[^|]*\|\s*\|\s*[\d\s,.]+\s*\|\s*\|\s*([\d\s,.]+)/i);
-    
-    const ddsMatch = text.match(/DDS ZC\s+([\d\s,.]+)/i);
+    // 1. Identifikácia dátumu (mesiaca)
     const dateMatch = text.match(/(Január|Február|Marec|Apríl|Máj|Jún|Júl|August|September|Október|November|December)\s+(\d{4})/i);
-
     let dateStr = new Date().toISOString().split('T')[0];
     if (dateMatch) {
         const months = { 'január':'01', 'február':'02', 'marec':'03', 'apríl':'04', 'máj':'05', 'jún':'06', 'júl':'07', 'august':'08', 'september':'09', 'október':'10', 'november':'11', 'december':'12' };
@@ -88,27 +76,35 @@ function parseSalaryText(text) {
     }
 
     const results = [];
-    if (grossMatch) results.push({ date: dateStr, type: 'Príjem', category: 'PD - MV SR', amount: cleanNum(grossMatch[1]), note: 'hrubá mzda' });
-    
-    // Skúsime zachytiť poistné a daň pomocou pozície v texte, ak regex zlyhá
-    let insuranceVal = insuranceMatch ? cleanNum(insuranceMatch[1]) : (insuranceAlt ? cleanNum(insuranceAlt[1]) : 0);
-    // Ak stále nula, skúsime nájsť sumu 423,07 priamo (špecifické pre tvoju pásku na test)
-    if (insuranceVal === 0) {
-        const fallbackIns = text.match(/\|\s*(423,07)\s*\|/);
-        if (fallbackIns) insuranceVal = cleanNum(fallbackIns[1]);
+
+    // 2. Hrubý príjem (Robustné zachytenie tisícok)
+    const grossMatch = text.match(/HRUBÝ PRÍJEM\s+([\d\s,.]+)/i);
+    if (grossMatch) {
+        results.push({ date: dateStr, type: 'Príjem', category: 'PD - MV SR', amount: cleanNum(grossMatch[1]), note: 'hrubá mzda' });
     }
 
-    if (insuranceVal > 0) results.push({ date: dateStr, type: 'Výdaj', category: 'VD - poistenie', amount: insuranceVal, note: 'odvody' });
+    // 3. Poistné a Daň (Univerzálny regex pre riadok s hodnotami)
+    // Na páske je riadok v tvare: | 423,07 | | 519,52 | |
+    // Tento regex hľadá presne túto štruktúru bez ohľadu na konkrétne sumy
+    const tableRowMatch = text.match(/\|\s*([\d\s,.]+)\s*\|\s*\|\s*([\d\s,.]+)\s*\|\s*\|/);
     
-    let taxVal = taxMatch ? cleanNum(taxMatch[1]) : 0;
-    if (taxVal === 0) {
-        const fallbackTax = text.match(/\|\s*423,07\s*\|\s*\|\s*(519,52)\s*\|/);
-        if (fallbackTax) taxVal = cleanNum(fallbackTax[1]);
+    if (tableRowMatch) {
+        const insuranceVal = cleanNum(tableRowMatch[1]);
+        const taxVal = cleanNum(tableRowMatch[2]);
+
+        if (insuranceVal > 0) {
+            results.push({ date: dateStr, type: 'Výdaj', category: 'VD - poistenie', amount: insuranceVal, note: 'odvody' });
+        }
+        if (taxVal > 0) {
+            results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: taxVal, note: 'preddavok na daň' });
+        }
     }
-    
-    if (taxVal > 0) results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: taxVal, note: 'preddavok na daň' });
-    
-    if (ddsMatch) results.push({ date: dateStr, type: 'Výdaj', category: 'VD - DDS', amount: cleanNum(ddsMatch[1]), note: 'príspevok DDS' });
+
+    // 4. DDS ZC
+    const ddsMatch = text.match(/DDS ZC\s+([\d\s,.]+)/i);
+    if (ddsMatch) {
+        results.push({ date: dateStr, type: 'Výdaj', category: 'VD - DDS', amount: cleanNum(ddsMatch[1]), note: 'príspevok DDS' });
+    }
 
     return results;
 }
@@ -118,7 +114,7 @@ function preparePreview(data, container, modal) {
     container.innerHTML = "";
     
     if (data.length === 0) {
-        container.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nepodarilo sa identifikovať žiadne sumy. Skontrolujte formát PDF.</td></tr>";
+        container.innerHTML = "<tr><td colspan='5' style='text-align:center; padding:20px;'>Nepodarilo sa identifikovať žiadne sumy.</td></tr>";
     }
 
     data.forEach((tx) => {
