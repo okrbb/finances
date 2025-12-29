@@ -227,120 +227,110 @@
                 </div>
 
                 <div id="budgetView" class="view">
-                    
-                    <div class="card flex-between" style="flex-wrap: wrap; gap: 1rem;">
-                        <div class="budget-controls" style="display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                    <div class="card flex-between" style="padding: 1rem 1.5rem; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
                             <div>
-                                <label class="stat-label">MESIAC</label>
-                                <input type="month" id="budgetMonthSelect" class="no-icon" style="font-weight: bold;">
+                                <label class="stat-label" style="margin-bottom: 0.2rem; display: block;">MESIAC</label>
+                                <input type="month" id="budgetMonthSelect" class="no-icon" style="font-weight: bold; width: 180px; padding: 0.5rem;">
                             </div>
-                            <div style="display: flex; gap: 0.5rem;">
-                                <button id="btnSaveBudget" class="btn btn-success">
+                            <div style="display: flex; gap: 0.5rem; margin-top: 1.2rem;">
+                                <button id="btnSaveBudget" class="btn btn-success" title="Uložiť rozpočet">
                                     <i class="fa-solid fa-save"></i> Uložiť
                                 </button>
-                                <button id="btnCopyBudget" class="btn btn-secondary">
+                                <button id="btnCopyBudget" class="btn btn-secondary" title="Kopírovať do iných mesiacov">
                                     <i class="fa-regular fa-copy"></i>
                                 </button>
+                                <button id="btnExportBudgetPdf" class="btn btn-secondary" title="Exportovať do PDF">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </button>
+                                <button id="btnExportBudgetExcel" class="btn btn-secondary" title="Exportovať do Excelu">
+                                    <i class="fa-solid fa-file-excel"></i>
+                                </button>
                             </div>
+                            <div id="budgetStatus" style="margin-top: 1.2rem; font-weight: bold; font-size: 0.85rem;"></div>
                         </div>
-                        
-                        <span id="budgetStatus" style="font-weight: bold; color: var(--warning);"></span>
 
-                        <div style="display: flex; gap: 1.5rem;">
-                            <div style="border-left: 4px solid var(--danger); padding-left: 10px;">
+                        <div style="display: flex; gap: 1rem;">
+                            <div class="budget-stat-chip">
+                                <span class="stat-label">Príjmy</span>
+                                <span id="totalBudgetIncome" class="text-success">0.00 €</span>
+                            </div>
+                            <div class="budget-stat-chip">
                                 <span class="stat-label">Náklady</span>
-                                <span id="totalBudgetExpenses" style="display: block; font-size: 1.2rem; font-weight: bold;">0.00 €</span>
+                                <span id="totalBudgetExpenses" style="color: var(--danger);">0.00 €</span>
                             </div>
-                            <div style="border-left: 4px solid var(--primary); padding-left: 10px;">
+                            <div class="budget-stat-chip primary">
                                 <span class="stat-label">Zostatok</span>
-                                <span id="totalBudgetBalance" style="display: block; font-size: 1.2rem; font-weight: bold; color: var(--primary);">0.00 €</span>
+                                <span id="totalBudgetBalance">0.00 €</span>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card" style="padding: 0; overflow: hidden;">
-                        <div style="background-color: #ecfdf5; padding: 1rem; border-bottom: 1px solid #d1fae5;">
-                            <h3 style="color: #065f46; font-weight: bold;"><i class="fa-solid fa-wallet"></i> Mesačný Príjem</h3>
-                        </div>
-                        <div style="padding: 1rem;" id="incomeContainer">
-                            <table class="budget-table">
-                                <tbody>
-                                    <tr>
-                                        <td>Zamestnanie</td>
-                                        <td><input type="number" step="0.01" class="income" data-field="inc_salary" placeholder="0.00 €"></td>
-                                    </tr>
-                                    <tr>
-                                        <td>Dôchodok</td>
-                                        <td><input type="number" step="0.01" class="income" data-field="inc_pension" placeholder="0.00 €"></td>
-                                    </tr>
-                                    <tr>
-                                        <td>Prenájom</td>
-                                        <td><input type="number" step="0.01" class="income" data-field="inc_rent" placeholder="0.00 €"></td>
-                                    </tr>
-                                    <tr style="background-color: #f8fafc; font-weight: bold;">
-                                        <td>Celkový príjem</td>
-                                        <td style="text-align: right;">
-                                            <span id="totalBudgetIncome" class="text-success">0.00 €</span>
-                                            <button class="btn-clear-section" data-target="incomeContainer" style="border:none; background:none; color:#ef4444; font-size:0.7rem; font-weight:bold; cursor:pointer; margin-left:10px;">VYMAZAŤ</button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="grid-2">
-                        <div class="card" style="padding: 0; overflow: hidden;">
-                            <div style="background-color: #eff6ff; padding: 1rem; border-bottom: 1px solid #dbeafe;">
-                                <h3 style="color: #1e40af; font-weight: bold;"><i class="fa-solid fa-house"></i> Bývanie</h3>
+                    <div class="grid-3">
+                        <div class="card budget-column">
+                            <div class="budget-column-header income-header">
+                                <h3><i class="fa-solid fa-wallet"></i> Mesačný Príjem</h3>
+                                <button class="btn-clear-section" data-target="incomeContainer" title="Vymazať sekciu">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
                             </div>
-                            <div style="padding: 1rem;" id="housingContainer">
+                            <div id="incomeContainer" class="budget-table-wrapper">
                                 <table class="budget-table">
                                     <tbody>
-                                        <tr><td>Byt</td><td><input type="number" step="0.01" class="housing" data-field="exp_flat" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Fond opráv</td><td><input type="number" step="0.01" class="housing" data-field="exp_fund" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Elektrina</td><td><input type="number" step="0.01" class="housing" data-field="exp_electric" placeholder="0.00 €"></td></tr>
-                                        <tr><td>RTVS</td><td><input type="number" step="0.01" class="housing" data-field="exp_rtvs" placeholder="0.00 €"></td></tr>
-                                        <tr><td>4ka</td><td><input type="number" step="0.01" class="housing" data-field="exp_internet" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Radosť</td><td><input type="number" step="0.01" class="housing" data-field="exp_tablet" placeholder="0.00 €"></td></tr>
+                                        <tr><td>Zamestnanie</td><td><input type="number" step="0.01" class="income" data-field="inc_salary" placeholder="0.00"></td></tr>
+                                        <tr><td>Dôchodok</td><td><input type="number" step="0.01" class="income" data-field="inc_pension" placeholder="0.00"></td></tr>
+                                        <tr><td>Prenájom</td><td><input type="number" step="0.01" class="income" data-field="inc_rent" placeholder="0.00"></td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card budget-column">
+                            <div class="budget-column-header housing-header">
+                                <h3><i class="fa-solid fa-house"></i> Bývanie</h3>
+                                <button class="btn-clear-section" data-target="housingContainer" title="Vymazať">X</button>
+                            </div>
+                            <div id="housingContainer" class="budget-table-wrapper">
+                                <table class="budget-table">
+                                    <tbody>
+                                        <tr><td>Byt</td><td><input type="number" step="0.01" class="housing" data-field="exp_flat" placeholder="0.00"></td></tr>
+                                        <tr><td>Fond opráv</td><td><input type="number" step="0.01" class="housing" data-field="exp_fund" placeholder="0.00"></td></tr>
+                                        <tr><td>Elektrina</td><td><input type="number" step="0.01" class="housing" data-field="exp_electric" placeholder="0.00"></td></tr>
+                                        <tr><td>4ka</td><td><input type="number" step="0.01" class="housing" data-field="exp_internet" placeholder="0.00"></td></tr>
+                                        <tr><td>Radosť</td><td><input type="number" step="0.01" class="housing" data-field="exp_tablet" placeholder="0.00"></td></tr>
                                         <tr><td>Telekom</td><td><input type="number" step="0.01" class="housing" data-field="exp_mobile" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Youtube</td><td><input type="number" step="0.01" class="housing" data-field="exp_youtube" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Hypotéka</td><td><input type="number" step="0.01" class="housing" data-field="exp_mortgage" placeholder="0.00 €"></td></tr>
-                                        <tr><td>TB (Banka)</td><td><input type="number" step="0.01" class="housing" data-field="exp_bank" placeholder="0.00 €"></td></tr>
-                                        <tr style="background-color: #f8fafc; font-weight: bold;">
-                                            <td>Celkom</td>
-                                            <td style="text-align: right;">
-                                                <span id="totalHousing" style="color: var(--primary);">0.00 €</span>
-                                                <button class="btn-clear-section" data-target="housingContainer" style="border:none; background:none; color:#ef4444; font-weight:bold; cursor:pointer; margin-left:5px;">X</button>
-                                            </td>
+                                        <tr><td>Youtube</td><td><input type="number" step="0.01" class="housing" data-field="exp_youtube" placeholder="0.00"></td></tr>
+                                        <tr><td>Hypotéka</td><td><input type="number" step="0.01" class="housing" data-field="exp_mortgage" placeholder="0.00"></td></tr>
+                                        <tr><td>SÚ TB</td><td><input type="number" step="0.01" class="housing" data-field="exp_bank" placeholder="0.00"></td></tr>
+                                        <tr class="total-row">
+                                            <td>CELKOM</td>
+                                            <td id="totalHousing">0.00 €</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
 
-                        <div class="card" style="padding: 0; overflow: hidden;">
-                            <div style="background-color: #fff7ed; padding: 1rem; border-bottom: 1px solid #ffedd5;">
-                                <h3 style="color: #9a3412; font-weight: bold;"><i class="fa-solid fa-basket-shopping"></i> Ostatné</h3>
+                        <div class="card budget-column">
+                            <div class="budget-column-header other-header">
+                                <h3><i class="fa-solid fa-basket-shopping"></i> Ostatné</h3>
+                                <button class="btn-clear-section" data-target="otherContainer" title="Vymazať">X</button>
                             </div>
-                            <div style="padding: 1rem;" id="otherContainer">
+                            <div id="otherContainer" class="budget-table-wrapper">
                                 <table class="budget-table">
                                     <tbody>
-                                        <tr><td>Emmka škola</td><td><input type="number" step="0.01" class="other" data-field="oth_school" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Emmka výživné</td><td><input type="number" step="0.01" class="other" data-field="oth_alimony" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Emmka vreckové</td><td><input type="number" step="0.01" class="other" data-field="oth_pocket" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Emmka kone</td><td><input type="number" step="0.01" class="other" data-field="oth_horses" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Emmka vianoce</td><td><input type="number" step="0.01" class="other" data-field="oth_christmas" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Podnájom</td><td><input type="number" step="0.01" class="other" data-field="oth_rent" placeholder="0.00 €"></td></tr>
-                                        <tr><td>EIC + Portu</td><td><input type="number" step="0.01" class="other" data-field="oth_invest" placeholder="0.00 €"></td></tr>
-                                        <tr><td>MetLife</td><td><input type="number" step="0.01" class="other" data-field="oth_insurance" placeholder="0.00 €"></td></tr>
-                                        <tr><td>Iné</td><td><input type="number" step="0.01" class="other" data-field="oth_misc" placeholder="0.00 €"></td></tr>
-                                        <tr style="background-color: #f8fafc; font-weight: bold;">
-                                            <td>Celkom</td>
-                                            <td style="text-align: right;">
-                                                <span id="totalOther" style="color: var(--warning);">0.00 €</span>
-                                                <button class="btn-clear-section" data-target="otherContainer" style="border:none; background:none; color:#ef4444; font-weight:bold; cursor:pointer; margin-left:5px;">X</button>
-                                            </td>
+                                        <tr><td>Emmka škola</td><td><input type="number" step="0.01" class="other" data-field="oth_school" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka výživné</td><td><input type="number" step="0.01" class="other" data-field="oth_alimony" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka vreckové</td><td><input type="number" step="0.01" class="other" data-field="oth_pocket" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka vianoce</td><td><input type="number" step="0.01" class="other" data-field="oth_christmas" placeholder="0.00 €"></td>
+                                        <tr><td>Kone</td><td><input type="number" step="0.01" class="other" data-field="oth_horses" placeholder="0.00"></td></tr>
+                                        <tr><td>Podnájom</td><td><input type="number" step="0.01" class="other" data-field="oth_rent" placeholder="0.00"></td></tr>
+                                        <tr><td>EIC + Portu</td><td><input type="number" step="0.01" class="other" data-field="oth_invest" placeholder="0.00"></td></tr>
+                                        <tr><td>MetLife</td><td><input type="number" step="0.01" class="other" data-field="oth_insurance" placeholder="0.00"></td></tr>
+                                        <tr><td>Iné</td><td><input type="number" step="0.01" class="other" data-field="oth_misc" placeholder="0.00"></td></tr>
+                                        <tr class="total-row">
+                                            <td>CELKOM</td>
+                                            <td id="totalOther">0.00 €</td>
                                         </tr>
                                     </tbody>
                                 </table>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'danova-evidencia-v3';
+const CACHE_NAME = 'danova-evidencia-v4';
 
 // Zoznam súborov na statické cachovanie
 const ASSETS_TO_CACHE = [
