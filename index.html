@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daňová Evidencia</title>
+    <link rel="icon" href="./css/favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'</script>
+
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="preload" as="image" href="./css/DE.png">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="apple-touch-icon" href="./css/icon-192.png">
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('SW zaregistrovaný', reg))
+                .catch(err => console.log('SW registrácia zlyhala', err));
+            });
+        }
+    </script>
+</head>
+<body>
+
+    <div id="loginScreen" class="login-wrapper">
+        <div class="glass-panel">
+            <div class="login-header">
+                <div class="login-icon">
+                    <img src="./css/DE.png" alt="Logo" style="width: 90px; height: 90px; object-fit: contain; border-radius: 4px;">
+                </div>
+                <p style="color: #64748b; font-size: 0.85rem; margin-top: 5px;">Prihláste sa pre správu financií</p>
+            </div>
+            
+            <form id="loginForm" style="margin-top: 2rem;">
+                <div class="form-group">
+                    <label>Email</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-envelope"></i>
+                        <input type="email" id="loginEmail" placeholder="vas@email.com" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Heslo</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="loginPassword" placeholder="••••••••" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    Prihlásiť sa
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="mainApp" style="display: none;" class="app-layout">
+        
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src="./css/DE.png" alt="Logo" style="width: 54px; height: 54px; object-fit: contain; border-radius: 4px;">
+                <span>DAŇOVÁ EVIDENCIA</span>
+            </div>
+
+            <div class="user-profile">
+                <div class="avatar">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <div style="overflow: hidden;">
+                    <p id="userName" style="font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Načítavam...</p>
+                    <p id="userDIC" style="font-size: 0.75rem; color: #94a3b8;">DIČ: -</p>
+                </div>
+            </div>
+
+            <nav class="nav-menu nav-tabs">
+                <button class="nav-btn active" data-view="dashboard">
+                    <i class="fa-solid fa-house"></i> Dashboard
+                </button>
+                <button class="nav-btn" data-view="budget">
+                    <i class="fa-solid fa-wallet"></i> Rozpočet
+                </button>
+                <button class="nav-btn" data-view="transactions">
+                    <i class="fa-solid fa-list"></i> Transakcie
+                </button>
+                <button class="nav-btn" data-view="reports">
+                    <i class="fa-solid fa-chart-pie"></i> Prehľady
+                </button>
+                <button class="nav-btn" data-view="settings">
+                    <i class="fa-solid fa-gear"></i> Nastavenia
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button id="logoutBtn" class="btn btn-danger" style="width: 100%; justify-content: center;">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Odhlásiť
+                </button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            
+            <header class="mobile-header">
+                <div style="display: flex; align-items: center; gap: 10px; font-weight: bold;">
+                    <i class="fa-solid fa-chart-pie" style="color: #60a5fa;"></i> Evidencia
+                </div>
+                <span id="currentYear" style="background: var(--primary); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem;">2025</span>
+            </header>
+
+            <div class="top-bar">
+                <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-main);">Prehľad Financií</h2>
+                <div class="top-info">
+                    <div class="flex-center" style="display: flex; gap: 5px;">
+                        <i class="fa-solid fa-location-dot"></i>
+                        <span id="userAddress">-</span>
+                    </div>
+                    <div class="flex-center" style="display: flex; gap: 5px;">
+                        <i class="fa-solid fa-building-columns"></i>
+                        <span id="userAccount" style="font-family: monospace;">-</span>
+                    </div>
+                    <span style="background: #dbeafe; color: #1e40af; padding: 2px 10px; border-radius: 10px; font-weight: bold;">Rok 2025</span>
+                </div>
+            </div>
+
+            <div class="mobile-nav nav-tabs">
+                <button class="active" data-view="dashboard">Dashboard</button>
+                <button data-view="budget">Rozpočet</button>
+                <button data-view="transactions">Transakcie</button>
+                <button data-view="reports">Reporty</button>
+                <button data-view="settings">Nast.</button>
+            </div>
+
+            <div class="scroll-area">
+                
+                <div id="dashboardView" class="view active">
+                    <div class="grid-4">
+                        <div class="card stat-card">
+                            <div>
+                                <p class="stat-label">Príjem (Mzda)</p>
+                                <h3 class="stat-value" id="summaryIncome">0,00 €</h3>
+                            </div>
+                            <div class="stat-icon icon-blue"><i class="fa-solid fa-briefcase"></i></div>
+                        </div>
+                        <div class="card stat-card">
+                            <div>
+                                <p class="stat-label">Výsluhový Dôchodok</p>
+                                <h3 class="stat-value" id="summaryPension">0,00 €</h3>
+                            </div>
+                            <div class="stat-icon icon-purple"><i class="fa-solid fa-medal"></i></div>
+                        </div>
+                        <div class="card stat-card">
+                            <div>
+                                <p class="stat-label">Nájom (Príjem)</p>
+                                <h3 class="stat-value text-success" id="summaryRent">0,00 €</h3>
+                            </div>
+                            <div class="stat-icon icon-green"><i class="fa-solid fa-house-user"></i></div>
+                        </div>
+                        <div class="card stat-card">
+                            <div>
+                                <p class="stat-label">Nájom (Výdavky)</p>
+                                <h3 class="stat-value text-danger" id="summaryExpenses">0,00 €</h3>
+                            </div>
+                            <div class="stat-icon icon-red"><i class="fa-solid fa-wrench"></i></div>
+                        </div>
+                    </div>
+
+                    
+                       <div class="dashboard-main-grid">
+                            <div class="card">
+                                <h3 class="mb-4" style="font-weight: 700; display: flex; gap: 10px; align-items: center;">
+                                    <i class="fa-solid fa-calculator" style="color: var(--primary);"></i> Daňová Kalkulácia
+                                </h3>
+                                
+                                <div class="tax-summary">
+                                    <div class="tax-row">
+                                        <span style="color: var(--text-muted);">Čiastkový ZD (Prenájom)</span>
+                                        <span id="taxBaseRent" style="font-weight: 600;">0,00 €</span>
+                                    </div>
+                                    <div class="tax-row">
+                                        <span style="color: var(--text-muted);">Čiastkový ZD (Príjem - bez NČZD)</span>
+                                        <span id="taxBaseIncome" style="font-weight: 600;">0,00 €</span>
+                                    </div>
+                                    <div class="tax-row">
+                                        <span style="color: var(--text-muted);">Základ dane (zníž. o DDS)</span>
+                                        <span id="taxBase" style="font-weight: 600;">0,00 €</span>
+                                    </div>
+
+                                    <div class="tax-highlight">
+                                        <span id="taxLabel">DAŇ NA ÚHRADU:</span> 
+                                        <span id="taxToPay" style="font-size: 1.5rem;">0,00 €</span>
+                                    </div>
+
+                                    <div class="flex-between" style="margin-top: 1rem;">
+                                        <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: bold; color: var(--text-muted);">Reálny výsledok hospodárenia</span>
+                                        <span id="profitBeforeTax" class="text-success" style="font-size: 1.25rem; font-weight: 700;">0,00 €</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dashboard-side-stats">
+                                <div class="card">
+                                    <p class="stat-label">Zaplatené odvody (SP, ZP)</p>
+                                    <p class="stat-value" style="font-size: 1.2rem;" id="summaryInsurance">0,00 €</p>
+                                </div>
+                                <div class="card">
+                                    <p class="stat-label">Preddavky na daň</p>
+                                    <p class="stat-value" style="font-size: 1.2rem;" id="summaryTaxAdvance">0,00 €</p>
+                                </div>
+                                <div class="card">
+                                    <p class="stat-label">Príspevky DDS</p>
+                                    <p class="stat-value" style="font-size: 1.2rem;" id="summaryDDS">0,00 €</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Nová sekcia: Detail prenájmu izby -->
+                        <div class="card" style="margin-top: 1.5rem;">
+                            <h3 class="mb-4" style="font-weight: 700; display: flex; gap: 10px; align-items: center;">
+                                <i class="fa-solid fa-door-open" style="color: var(--success);"></i> Daňová Kalkulácia - Prenájom
+                            </h3>
+                            
+                            <div class="tax-summary">
+                                <div class="tax-row">
+                                    <span style="color: var(--text-muted);">Brutto príjem z prenájmu</span>
+                                    <span id="rentBruttoIncome" style="font-weight: 600; color: var(--success);">0,00 €</span>
+                                </div>
+                                <div class="tax-row">
+                                    <span style="color: var(--text-muted);">Oslobodenie (§ 9 ods. 1 písm. g)</span>
+                                    <span id="rentExemption" style="font-weight: 600; color: var(--danger);">- 0,00 €</span>
+                                </div>
+                                <div class="tax-row" style="border-top: 1px solid #e2e8f0; padding-top: 0.5rem; margin-top: 0.5rem;">
+                                    <span style="color: var(--text-muted); font-weight: 600;">Zdaniteľný príjem z prenájmu</span>
+                                    <span id="rentTaxableIncome" style="font-weight: 700; color: var(--primary);">0,00 €</span>
+                                </div>
+                                <div class="tax-row">
+                                    <span style="color: var(--text-muted);">Odpočítateľné výdavky (pomerná časť)</span>
+                                    <span id="rentDeductibleExpenses" style="font-weight: 600; color: var(--danger);">- 0,00 €</span>
+                                </div>
+                                <div class="tax-row" style="background: #f8fafc; padding: 0.75rem; border-radius: 8px; margin-top: 0.5rem;">
+                                    <span style="font-weight: 700; color: var(--text-dark);">Čistý príjem z prenájmu (ČZD)</span>
+                                    <span id="rentNetIncome" style="font-weight: 700; font-size: 1.1rem; color: var(--success);">0,00 €</span>
+                                </div>
+                                <div class="tax-row" style="border-top: 2px solid #e2e8f0; padding-top: 0.75rem; margin-top: 0.75rem;">
+                                    <span style="font-weight: 700; color: var(--text-dark); font-size: 1.05rem;">Daň z prenájmu (19%)</span>
+                                    <span id="rentTax" style="font-weight: 700; font-size: 1.2rem;">0,00 €</span>
+                                </div>
+                            </div>
+                        </div>
+                    
+                </div>
+
+                <div id="budgetView" class="view">
+                    <div class="card flex-between" style="padding: 1rem 1.5rem; margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <div>
+                                <label class="stat-label" style="margin-bottom: 0.2rem; display: block;">MESIAC</label>
+                                <input type="month" id="budgetMonthSelect" class="no-icon" style="font-weight: bold; width: 180px; padding: 0.5rem;">
+                            </div>
+                            <div style="display: flex; gap: 0.5rem; margin-top: 1.2rem;">
+                                <button id="btnSaveBudget" class="btn btn-success" title="Uložiť rozpočet">
+                                    <i class="fa-solid fa-save"></i> Uložiť
+                                </button>
+                                <button id="btnCopyBudget" class="btn btn-secondary" title="Kopírovať do iných mesiacov">
+                                    <i class="fa-regular fa-copy"></i>
+                                </button>
+                                <button id="btnExportBudgetPdf" class="btn btn-secondary" title="Exportovať do PDF">
+                                    <i class="fa-solid fa-file-pdf"></i>
+                                </button>
+                                <button id="btnExportBudgetExcel" class="btn btn-secondary" title="Exportovať do Excelu">
+                                    <i class="fa-solid fa-file-excel"></i>
+                                </button>
+                            </div>
+                            <div id="budgetStatus" style="margin-top: 1.2rem; font-weight: bold; font-size: 0.85rem;"></div>
+                        </div>
+
+                        <div style="display: flex; gap: 1rem;">
+                            <div class="budget-stat-chip">
+                                <span class="stat-label">Príjmy</span>
+                                <span id="totalBudgetIncome" class="text-success">0.00 €</span>
+                            </div>
+                            <div class="budget-stat-chip">
+                                <span class="stat-label">Náklady</span>
+                                <span id="totalBudgetExpenses" style="color: var(--danger);">0.00 €</span>
+                            </div>
+                            <div class="budget-stat-chip primary">
+                                <span class="stat-label">Zostatok</span>
+                                <span id="totalBudgetBalance">0.00 €</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="card budget-column">
+                            <div class="budget-column-header income-header">
+                                <h3><i class="fa-solid fa-wallet"></i> Mesačný Príjem</h3>
+                                <button class="btn-clear-section" data-target="incomeContainer" title="Vymazať sekciu">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div id="incomeContainer" class="budget-table-wrapper">
+                                <table class="budget-table">
+                                    <tbody>
+                                        <tr><td>Zamestnanie</td><td><input type="number" step="0.01" class="income" data-field="inc_salary" placeholder="0.00"></td></tr>
+                                        <tr><td>Dôchodok</td><td><input type="number" step="0.01" class="income" data-field="inc_pension" placeholder="0.00"></td></tr>
+                                        <tr><td>Prenájom</td><td><input type="number" step="0.01" class="income" data-field="inc_rent" placeholder="0.00"></td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card budget-column">
+                            <div class="budget-column-header housing-header">
+                                <h3><i class="fa-solid fa-house"></i> Bývanie</h3>
+                                <button class="btn-clear-section" data-target="housingContainer" title="Vymazať">X</button>
+                            </div>
+                            <div id="housingContainer" class="budget-table-wrapper">
+                                <table class="budget-table">
+                                    <tbody>
+                                        <tr><td>Byt</td><td><input type="number" step="0.01" class="housing" data-field="exp_flat" placeholder="0.00"></td></tr>
+                                        <tr><td>Fond opráv</td><td><input type="number" step="0.01" class="housing" data-field="exp_fund" placeholder="0.00"></td></tr>
+                                        <tr><td>Elektrina</td><td><input type="number" step="0.01" class="housing" data-field="exp_electric" placeholder="0.00"></td></tr>
+                                        <tr><td>4ka</td><td><input type="number" step="0.01" class="housing" data-field="exp_internet" placeholder="0.00"></td></tr>
+                                        <tr><td>Radosť</td><td><input type="number" step="0.01" class="housing" data-field="exp_tablet" placeholder="0.00"></td></tr>
+                                        <tr><td>Telekom</td><td><input type="number" step="0.01" class="housing" data-field="exp_mobile" placeholder="0.00 €"></td></tr>
+                                        <tr><td>Youtube</td><td><input type="number" step="0.01" class="housing" data-field="exp_youtube" placeholder="0.00"></td></tr>
+                                        <tr><td>Hypotéka</td><td><input type="number" step="0.01" class="housing" data-field="exp_mortgage" placeholder="0.00"></td></tr>
+                                        <tr><td>SÚ TB</td><td><input type="number" step="0.01" class="housing" data-field="exp_bank" placeholder="0.00"></td></tr>
+                                        <tr class="total-row">
+                                            <td>CELKOM</td>
+                                            <td id="totalHousing">0.00 €</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card budget-column">
+                            <div class="budget-column-header other-header">
+                                <h3><i class="fa-solid fa-basket-shopping"></i> Ostatné</h3>
+                                <button class="btn-clear-section" data-target="otherContainer" title="Vymazať">X</button>
+                            </div>
+                            <div id="otherContainer" class="budget-table-wrapper">
+                                <table class="budget-table">
+                                    <tbody>
+                                        <tr><td>Emmka škola</td><td><input type="number" step="0.01" class="other" data-field="oth_school" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka výživné</td><td><input type="number" step="0.01" class="other" data-field="oth_alimony" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka vreckové</td><td><input type="number" step="0.01" class="other" data-field="oth_pocket" placeholder="0.00"></td></tr>
+                                        <tr><td>Emmka vianoce</td><td><input type="number" step="0.01" class="other" data-field="oth_christmas" placeholder="0.00 €"></td>
+                                        <tr><td>Kone</td><td><input type="number" step="0.01" class="other" data-field="oth_horses" placeholder="0.00"></td></tr>
+                                        <tr><td>Podnájom</td><td><input type="number" step="0.01" class="other" data-field="oth_rent" placeholder="0.00"></td></tr>
+                                        <tr><td>EIC + Portu</td><td><input type="number" step="0.01" class="other" data-field="oth_invest" placeholder="0.00"></td></tr>
+                                        <tr><td>MetLife</td><td><input type="number" step="0.01" class="other" data-field="oth_insurance" placeholder="0.00"></td></tr>
+                                        <tr><td>Iné</td><td><input type="number" step="0.01" class="other" data-field="oth_misc" placeholder="0.00"></td></tr>
+                                        <tr class="total-row">
+                                            <td>CELKOM</td>
+                                            <td id="totalOther">0.00 €</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="transactionsView" class="view">
+                    <div class="card">
+                        <h2 class="mb-4" style="font-weight: bold;"><i class="fa-solid fa-plus-circle text-primary"></i> Nová Transakcia</h2>
+                        <form id="transactionForm">
+                            <div class="grid-4">
+                                <div class="form-group">
+                                    <label>Dátum</label>
+                                    <input type="date" id="txDate" required class="no-icon">
+                                </div>
+                                <div class="form-group">
+                                    <label>Číslo dokladu</label>
+                                    <input type="number" id="txNumber" class="no-icon">
+                                </div>
+                                <div class="form-group">
+                                    <label>Druh</label>
+                                    <select id="txType" required class="no-icon">
+                                        <option value="Príjem">Príjem</option>
+                                        <option value="Výdaj">Výdaj</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Účet</label>
+                                    <select id="txAccount" required class="no-icon">
+                                        <option value="banka">Banka</option>
+                                        <option value="pokladňa">Pokladňa</option>
+                                    </select>
+                                </div>
+                                <div style="grid-column: span 1;">
+                                    <label style="font-size: 0.75rem; font-weight: bold; color: var(--text-muted);">Kategória</label>
+                                    <select id="txCategory" required class="no-icon" style="width: 100%;">
+                                        <option value="">-- Vyberte kategóriu --</option>
+                                        <optgroup label="Príjmy">
+                                            <option value="PD - mzda">PD - MV SR</option>
+                                            <option value="PD - prenájom">PD - prenájom</option>
+                                            <option value="PN - výsluhový dôchodok">PN - výsluhový dôchodok</option>
+                                        </optgroup>
+                                        <optgroup label="Výdavky">
+                                            <option value="VD - bytové družstvo">VD - BD Trnava</option>
+                                            <option value="VD - Telekom">VD - internet</option>
+                                            <option value="VD - MsÚ Trnava">VD - MsÚ Trnava</option>
+                                            <option value="VD - 4ka">VD - TV</option>
+                                            <option value="VD - ZSE">VD - ZSE</option>
+                                            <option value="VD - iné">VD - iné</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="grid-3-1" style="margin-bottom: 1rem;">
+                                
+                                <div>
+                                    <label style="font-size: 0.75rem; font-weight: bold; color: var(--text-muted);">Poznámka</label>
+                                    <input type="text" id="txNote" class="no-icon" placeholder="Detail...">
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.75rem; font-weight: bold; color: var(--text-muted);">Suma (€)</label>
+                                    <input type="number" id="txAmount" step="0.01" required class="no-icon" style="font-weight: bold;">
+                                </div>
+                            </div>
+
+                            <div style="text-align: right;">
+                                <button type="submit" class="btn btn-primary" style="width: auto;">Pridať transakciu</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <div class="flex-between mb-4">
+                            <h2 style="font-weight: bold;">Zoznam transakcií</h2>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="file" id="bankImportInput" accept=".xml" style="display: none;">
+                                <button onclick="document.getElementById('bankImportInput').click()" class="btn btn-secondary">
+                                    <i class="fa-solid fa-file-import"></i> Import výpisu
+                                </button>
+                                <input type="file" id="salaryImportInput" accept=".pdf" style="display: none;">
+                                <button onclick="document.getElementById('salaryImportInput').click()" class="btn btn-secondary">
+                                    <i class="fa-solid fa-file-pdf"></i> Import pásky
+                                </button>
+                                <div class="input-wrapper" style="width: 250px;">
+                                    <i class="fa-solid fa-search"></i>
+                                    <input type="text" id="searchTransactionInput" placeholder="Hľadať..." style="border-radius: 20px;">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="transactions-table-container">
+                            <table id="transactionsTable">
+                                <thead>
+                                    <tr>
+                                        <th>Dátum</th>
+                                        <th>Číslo</th>
+                                        <th>Druh</th>
+                                        <th>Účet</th>
+                                        <th>Popis</th>
+                                        <th>Poznámka</th>
+                                        <th style="text-align: right; color: var(--success);">Príjem</th>
+                                        <th style="text-align: right; color: var(--danger);">Výdaj</th>
+                                        <th style="text-align: center;">Akcie</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transactionsList">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="reportsView" class="view">
+                    <div class="card">
+                        <h2 class="mb-4" style="font-weight: bold;"><i class="fa-solid fa-filter text-warning"></i> Filtre a Export</h2>
+                        
+                        <div class="grid-3-1" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 1.5rem;">
+                            <div class="form-group">
+                                <label>Od</label>
+                                <input type="date" id="reportDateFrom" value="2025-01-01" class="no-icon">
+                            </div>
+                            <div class="form-group">
+                                <label>Do</label>
+                                <input type="date" id="reportDateTo" value="2025-12-31" class="no-icon">
+                            </div>
+                            <div class="form-group">
+                                <label>Druh</label>
+                                <select id="reportTypeFilter" class="no-icon">
+                                    <option value="all">Všetky</option>
+                                    <option value="Príjem">Iba Príjmy</option>
+                                    <option value="Výdaj">Iba Výdavky</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div style="background: #fefce8; padding: 1rem; border: 1px solid #fef08a; border-radius: var(--radius); margin-bottom: 1.5rem;">
+                            <label style="color: #854d0e; font-weight: bold; display: block; margin-bottom: 0.5rem;">KATEGÓRIE</label>
+                            <div style="display: flex; flex-wrap: wrap; gap: 1rem;">
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="mzda" checked><span class="checkmark"></span> Mzda / Dôchodok</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="prenajom" checked><span class="checkmark"></span> Prenájom</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="dane" checked><span class="checkmark"></span> Odvody</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="byvanie" checked><span class="checkmark"></span> Bývanie</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="energie" checked><span class="checkmark"></span> Energie</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="tv" checked><span class="checkmark"></span> TV / Net</label>
+                                <label class="checkbox-container"><input type="checkbox" class="report-cat-filter" value="ine" checked><span class="checkmark"></span> Iné</label>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="generateReportBtn" class="btn btn-primary" style="width: auto;">Generovať</button>
+                        <button id="showChartBtn" class="btn btn-purple">Zobraziť Graf</button>
+                        <button id="exportPdfBtn" class="btn btn-secondary"><i class="fa-regular fa-file-pdf"></i> PDF</button>
+                        <button id="exportExcelBtn" class="btn btn-success"><i class="fa-regular fa-file-excel"></i> Excel</button>
+                        <button id="exportTaxDraftBtn" class="btn btn-purple"><i class="fa-solid fa-file-invoice-dollar"></i> Daňový Draft (PDF)</button>
+                    </div>
+
+                    <div id="chartContainer" class="card hidden">
+                        <div class="grid-2">
+                            <div style="min-height: 300px;">
+                                <h4 class="text-center mb-2" style="font-size: 0.8rem; color: var(--text-muted);">MESAČNÝ PREHĽAD</h4>
+                                <canvas id="reportChart"></canvas> </div>
+                            <div style="min-height: 300px;">
+                                <h4 class="text-center mb-2" style="font-size: 0.8rem; color: var(--text-muted);">ROZDELENIE VÝDAVKOV</h4>
+                                <canvas id="categoryPieChart"></canvas> </div>
+                        </div>
+                    </div>
+
+                    <div id="reportContent" class="card" style="overflow-x: auto;"></div>
+                </div>
+            </div>
+                <div id="settingsView" class="view">
+                    <div class="card" style="max-width: 600px; margin: 0 auto;">
+                        <h2 class="mb-4" style="border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;">Používateľské nastavenia</h2>
+                        <form id="settingsForm">
+                            <div class="form-group">
+                                <label>Meno a priezvisko</label>
+                                <input type="text" id="settingsName" class="no-icon">
+                            </div>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label>DIČ</label>
+                                    <input type="text" id="settingsDIC" class="no-icon">
+                                </div>
+                                <div class="form-group">
+                                    <label>Rok</label>
+                                    <input type="text" id="settingsYear" class="no-icon">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Adresa</label>
+                                <input type="text" id="settingsAddress" class="no-icon">
+                            </div>
+                            <div class="form-group">
+                                <label>IBAN</label>
+                                <input type="text" id="settingsIBAN" class="no-icon" style="font-family: monospace;">
+                            </div>
+                            <div class="grid-2">
+                                <div class="form-group">
+                                    <label>Oslobodenie prenájmu (€)</label>
+                                    <input type="number" id="configRentExemption" class="no-icon" step="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>Sadzba dane (napr. 0,19)</label>
+                                    <input type="number" id="configTaxRate" class="no-icon" step="0.01">
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Uložiť zmeny</button>
+                        </form>
+                        <button id="btnExportBackup" class="btn btn-secondary" style="width: 100%; margin-top: 1rem;">
+                            <i class="fa-solid fa-download"></i> Exportovať zálohu (JSON)
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <div id="copyModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 style="font-weight: bold; margin-bottom: 0.5rem;">Kopírovať údaje</h3>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Vyberte mesiace, do ktorých chcete preniesť aktuálne sumy.</p>
+            
+            <div id="monthsGrid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.5rem;">
+                </div>
+
+            <div class="modal-actions">
+                <button id="btnCloseModal" class="btn btn-secondary" style="width: auto;">Zrušiť</button>
+                <button id="btnConfirmCopy" class="btn btn-primary" style="width: auto;">Potvrdiť</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="importPreviewModal" class="modal-overlay" style="display: none;">
+        <div class="modal-box" style="max-width: 900px; width: 95%;">
+            <h3 style="font-weight: bold; margin-bottom: 1rem;">Náhľad importu z banky</h3>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+                Vyberte transakcie, ktoré chcete pridať do evidencie. Duplikáty sú automaticky odznačené.
+            </p>
+            
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+                <table style="width: 100%; font-size: 0.85rem;">
+                    <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                        <tr>
+                            <th style="padding: 10px; width: 40px;"><input type="checkbox" id="selectAllImport"></th>
+                            <th style="width: 100px;">Dátum</th>
+                            <th style="text-align: left; width: 55%;">Popis / Partner</th>
+                            <th style="text-align: right; width: 100px;">Suma</th>
+                            <th style="width: 120px;">Kategória</th>
+                        </tr>
+                    </thead>
+                    <tbody id="importPreviewList">
+                        </tbody>
+                </table>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 1.5rem;">
+                <button id="btnCancelImport" class="btn btn-secondary">Zrušiť</button>
+                <button id="btnConfirmFinalImport" class="btn btn-primary">Importovať vybrané</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/app.js"></script>
+</body>
+
+</html>
