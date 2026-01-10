@@ -71,9 +71,23 @@ async function initializeYearSystem() {
         updateYearSelector(activeYear, archivedYears);
         
         // 4. Skontrolovať či je potrebné uzavrieť rok
-        const closureCheck = checkYearClosureNeeded(activeYear);
-        if (closureCheck.needed) {
-            showYearClosureBanner(activeYear);
+        // OPRAVA: Nekontrolovať ak je predchádzajúci rok už uzavretý
+        const currentDate = new Date();
+        const currentRealYear = currentDate.getFullYear();
+        const previousYear = currentRealYear - 1;
+        
+        // Banner sa zobrazí len ak:
+        // - Je január aktuálneho roka
+        // - Predchádzajúci rok NIE JE uzavretý
+        // - Predchádzajúci rok je aktívny rok
+        if (currentDate.getMonth() === 0 && // Je január
+            activeYear === previousYear && // Aktívny rok je minulý rok
+            !archivedYears.includes(previousYear)) { // A nie je uzavretý
+            
+            const closureCheck = checkYearClosureNeeded(activeYear);
+            if (closureCheck.needed) {
+                showYearClosureBanner(activeYear);
+            }
         }
         
         console.log(`✅ Year system inicializovaný: aktívny rok ${activeYear}`);
