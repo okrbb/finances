@@ -5,6 +5,9 @@ import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/f
 
 const MONTH_NAMES = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
 
+// Globálna premenná pre aktuálny rok
+let currentBudgetYear = 2025;
+
 // --- 1. Inicializácia Eventov (Volané raz z app.js) ---
 export function setupBudgetEvents(db, getUserCallback) {
     const monthInput = document.getElementById('budgetMonthSelect');
@@ -67,7 +70,9 @@ export function setupBudgetEvents(db, getUserCallback) {
 
 // --- 2. Logika Výpočtov a Načítania dát ---
 
-export function loadBudget(user, db) {
+// UPRAVENÉ: Pridaný parameter year
+export function loadBudget(user, db, year = 2025) {
+    currentBudgetYear = year; // Uložiť aktuálny rok
     const monthInput = document.getElementById('budgetMonthSelect');
     if (monthInput) loadBudgetForMonth(user, db, monthInput.value);
 }
@@ -113,7 +118,9 @@ async function loadBudgetForMonth(user, db, yearMonth) {
     document.getElementById('budgetStatus').textContent = '';
 
     try {
-        const docSnap = await getDoc(doc(db, 'budgets', `${user.uid}_${yearMonth}`));
+        // UPRAVENÉ: Document ID teraz obsahuje year
+        const docId = `${user.uid}_${yearMonth}_${currentBudgetYear}`;
+        const docSnap = await getDoc(doc(db, 'budgets', docId));
         if (docSnap.exists()) {
             const data = docSnap.data();
             allInputs.forEach(input => {
@@ -132,14 +139,22 @@ async function saveAllBudget(user, db, yearMonth) {
     statusElem.textContent = 'Ukladám...';
     statusElem.className = 'text-warning';
 
-    const budgetData = { uid: user.uid, updatedAt: new Date() };
+    // UPRAVENÉ: Pridanie year do dát
+    const budgetData = { 
+        uid: user.uid, 
+        year: currentBudgetYear,  // NOVÉ
+        updatedAt: new Date() 
+    };
+    
     document.querySelectorAll('.budget-table input').forEach(input => {
         const field = input.dataset.field;
         if (field) budgetData[field] = input.value === '' ? 0 : parseFloat(input.value);
     });
 
     try {
-        await setDoc(doc(db, 'budgets', `${user.uid}_${yearMonth}`), budgetData, { merge: true });
+        // UPRAVENÉ: Document ID teraz obsahuje year
+        const docId = `${user.uid}_${yearMonth}_${currentBudgetYear}`;
+        await setDoc(doc(db, 'budgets', docId), budgetData, { merge: true });
         statusElem.textContent = 'Uložené ✓';
         statusElem.className = 'text-success';
         setTimeout(() => { if(statusElem.textContent.includes('Uložené')) statusElem.textContent=''; }, 3000);
@@ -184,15 +199,15 @@ function openSelectionModal(currentDateValue, user, db, mode = "copy") {
 
             const label = document.createElement('span');
             label.textContent = name;
-            div.append(checkbox, label);
+            label.style.fontWeight = '600';
+
+            div.appendChild(checkbox);
+            div.appendChild(label);
             grid.appendChild(div);
 
-            div.addEventListener('click', (e) => { if (e.target !== checkbox) checkbox.checked = !checkbox.checked; });
+            div.addEventListener('click', () => { if (!checkbox.disabled) checkbox.checked = !checkbox.checked; });
         });
     };
-
-    const existingYearSelector = modal.querySelector('.year-selector-container');
-    if (existingYearSelector) existingYearSelector.remove();
 
     const yearSelectorWrap = document.createElement('div');
     yearSelectorWrap.className = 'year-selector-container';
@@ -220,13 +235,13 @@ function openSelectionModal(currentDateValue, user, db, mode = "copy") {
     
     newConfirm.addEventListener('click', () => {
         if (mode === "copy") {
-            performCopy(user, db);
+            performCopy(user, db, selectedTargetYear); // UPRAVENÉ: Predáva rok
         } else {
             const checkboxes = document.querySelectorAll('.month-copy-checkbox:checked');
             const targetMonths = Array.from(checkboxes).map(cb => cb.value);
             if (targetMonths.length === 0) return showToast("Vyberte aspoň jeden mesiac", "warning");
             
-            exportSpecificMonthsExcel(user, db, targetMonths);
+            exportSpecificMonthsExcel(user, db, targetMonths, selectedTargetYear); // UPRAVENÉ: Predáva rok
             modal.style.display = 'none';
         }
     });
@@ -234,12 +249,17 @@ function openSelectionModal(currentDateValue, user, db, mode = "copy") {
     document.getElementById('btnCloseModal').onclick = () => { modal.style.display = 'none'; yearSelectorWrap.remove(); };
 }
 
-async function performCopy(user, db) {
+// UPRAVENÉ: Pridaný parameter targetYear
+async function performCopy(user, db, targetYear) {
     const checkboxes = document.querySelectorAll('.month-copy-checkbox:checked');
     const targetMonths = Array.from(checkboxes).map(cb => cb.value);
     if (targetMonths.length === 0) return showToast("Vyberte aspoň jeden mesiac", "warning");
 
-    const dataToCopy = { uid: user.uid, updatedAt: new Date() };
+    const dataToCopy = { 
+        uid: user.uid, 
+        year: targetYear,  // NOVÉ
+        updatedAt: new Date() 
+    };
     let hasData = false;
     document.querySelectorAll('.budget-table input').forEach(input => {
         const field = input.dataset.field;
@@ -249,7 +269,11 @@ async function performCopy(user, db) {
     if (!hasData) return showToast("Aktuálny mesiac je prázdny", "danger");
 
     try {
-        const promises = targetMonths.map(targetDate => setDoc(doc(db, 'budgets', `${user.uid}_${targetDate}`), dataToCopy, { merge: true }));
+        // UPRAVENÉ: Document ID teraz obsahuje year
+        const promises = targetMonths.map(targetDate => {
+            const docId = `${user.uid}_${targetDate}_${targetYear}`;
+            return setDoc(doc(db, 'budgets', docId), dataToCopy, { merge: true });
+        });
         await Promise.all(promises);
         showToast(`Úspešne skopírované do ${targetMonths.length} mesiacov`, "success");
         document.getElementById('copyModal').style.display = 'none';
@@ -297,7 +321,8 @@ function setupBudgetExportEvents(db, getUserCallback) {
     });
 }
 
-async function exportSpecificMonthsExcel(user, db, selectedMonths) {
+// UPRAVENÉ: Pridaný parameter exportYear
+async function exportSpecificMonthsExcel(user, db, selectedMonths, exportYear) {
     try {
         showToast("Pripravujem export...", "warning");
         const categories = [
@@ -325,7 +350,9 @@ async function exportSpecificMonthsExcel(user, db, selectedMonths) {
 
         const budgetDocs = {};
         for (const monthId of selectedMonths) {
-            const snap = await getDoc(doc(db, 'budgets', `${user.uid}_${monthId}`));
+            // UPRAVENÉ: Document ID teraz obsahuje year
+            const docId = `${user.uid}_${monthId}_${exportYear}`;
+            const snap = await getDoc(doc(db, 'budgets', docId));
             if (snap.exists()) budgetDocs[monthId] = snap.data();
         }
 
@@ -352,7 +379,7 @@ async function exportSpecificMonthsExcel(user, db, selectedMonths) {
             ...selectedMonths.map(() => ({ wch: 14 }))
         ];
 
-        XLSX.writeFile(wb, `Export_Rozpocet.xlsx`);
+        XLSX.writeFile(wb, `Export_Rozpocet_${exportYear}.xlsx`);
         showToast("Export dokončený", "success");
     } catch (error) {
         console.error(error);

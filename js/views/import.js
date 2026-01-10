@@ -1,5 +1,6 @@
 import { collection, addDoc, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { showToast } from '../notifications.js';
+import { activeYear } from '../app.js';
 
 let pendingTransactions = []; // Dočasné úložisko pre vybrané transakcie
 
@@ -96,6 +97,8 @@ export function setupImportEvents(db, user, refreshCallback) {
                     note: data.note,
                     account: "banka",
                     bankRef: data.bankRef,
+                    year: activeYear,
+                    archived: false,
                     createdAt: new Date()
                 });
                 count++;

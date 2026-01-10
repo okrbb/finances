@@ -810,3 +810,445 @@ input:checked ~ .checkmark:after {
     font-size: 0.9rem;
     font-weight: 700;
 }
+
+/* ========================================
+   YEAR SYSTEM STYLES
+   Pridať na koniec styles.css
+   ======================================== */
+
+/* Year Selector */
+.year-selector {
+    position: relative;
+    margin-right: 20px;
+}
+
+.year-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    color: #334155;
+    transition: all 0.2s;
+}
+
+.year-selector-btn:hover {
+    border-color: #2563eb;
+    color: #2563eb;
+}
+
+.year-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 200px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    display: none;
+    z-index: 1000;
+}
+
+.year-dropdown.show {
+    display: block;
+}
+
+.year-dropdown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.year-dropdown-item:hover {
+    background: #f8fafc;
+}
+
+.year-dropdown-divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 4px 0;
+}
+
+.year-number {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.year-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.year-badge.active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.year-badge.archived {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.archive-link {
+    color: #2563eb;
+    font-weight: 600;
+}
+
+/* Archive Banner */
+.archive-banner {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: white;
+    padding: 16px;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.archive-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.archive-banner i {
+    font-size: 1.5rem;
+}
+
+.archive-banner-note {
+    opacity: 0.9;
+    font-size: 0.9rem;
+}
+
+.btn-back-to-active {
+    margin-left: auto;
+    padding: 8px 16px;
+    background: white;
+    color: #f59e0b;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.btn-back-to-active:hover {
+    background: #fffbeb;
+}
+
+/* Closure Banner */
+.closure-banner {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    padding: 16px;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.closure-banner-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.closure-banner i {
+    font-size: 1.5rem;
+}
+
+.closure-banner-note {
+    opacity: 0.9;
+    font-size: 0.9rem;
+}
+
+.btn-go-to-closure {
+    margin-left: auto;
+    padding: 8px 16px;
+    background: white;
+    color: #dc2626;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+}
+
+.btn-go-to-closure:hover {
+    background: #fef2f2;
+}
+
+.btn-dismiss {
+    padding: 8px 12px;
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-dismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Year Closure View */
+.closure-info {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 8px;
+    border-left: 4px solid #2563eb;
+}
+
+.closure-info ul {
+    list-style: none;
+    padding: 0;
+    margin-top: 12px;
+}
+
+.closure-info li {
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.closure-info i {
+    color: #2563eb;
+}
+
+/* Validation Results */
+.validation-status {
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.validation-status.valid {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.validation-status.invalid {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.validation-status i {
+    font-size: 2rem;
+}
+
+.validation-card {
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border-left: 4px solid;
+}
+
+.validation-card.errors {
+    background: #fee2e2;
+    border-color: #dc2626;
+}
+
+.validation-card.warnings {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+.validation-card.stats {
+    background: #f0f9ff;
+    border-color: #2563eb;
+}
+
+.validation-card h4 {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.validation-card ul {
+    list-style: none;
+    padding: 0;
+}
+
+.validation-card li {
+    padding: 6px 0;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 12px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px;
+    background: white;
+    border-radius: 6px;
+}
+
+.stat-value.positive {
+    color: #16a34a;
+    font-weight: 700;
+}
+
+.stat-value.negative {
+    color: #dc2626;
+    font-weight: 700;
+}
+
+/* Modal Dialogs */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    padding: 24px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header.success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border-radius: 12px 12px 0 0;
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.confirm-points {
+    margin-top: 20px;
+}
+
+.confirm-point {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.confirm-point.warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.confirm-point i {
+    font-size: 1.2rem;
+}
+
+.success-message {
+    text-align: center;
+    padding: 20px;
+}
+
+.success-message i {
+    font-size: 4rem;
+    color: #10b981;
+}
+
+.success-points {
+    margin: 20px 0;
+}
+
+.success-point {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f0fdf4;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.success-point i {
+    color: #16a34a;
+}
+
+.reload-note {
+    text-align: center;
+    font-style: italic;
+    color: #64748b;
+    margin-top: 20px;
+}
+
+/* Read-only Notice */
+.readonly-notice {
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.readonly-notice i {
+    font-size: 1.2rem;
+}
+
+/* Utility classes for Year Closure view */
+.mb-4 { margin-bottom: 1rem; }
+.mb-6 { margin-bottom: 1.5rem; }
+.text-xl { font-size: 1.25rem; }
+.text-3xl { font-size: 1.875rem; }
+.font-bold { font-weight: 700; }

@@ -2,6 +2,7 @@
 
 import { showToast } from '../notifications.js';
 import { collection, addDoc, deleteDoc, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { activeYear } from '../app.js';
 
 let editingTransactionId = null;
 
@@ -77,7 +78,7 @@ export function setupTransactionEvents(db, getUserCallback, refreshDataCallback)
 }
 
 async function handleFormSubmit(e, user, db, refreshCallback) {
-    // Zhromaždenie dát z formulára
+    // Zhromaženie dát z formulára
     const txData = {
         uid: user.uid,
         date: document.getElementById('txDate').value,
@@ -87,6 +88,8 @@ async function handleFormSubmit(e, user, db, refreshCallback) {
         category: document.getElementById('txCategory').value, 
         note: document.getElementById('txNote').value,
         amount: parseFloat(document.getElementById('txAmount').value),
+        year: activeYear, // PRIDANÉ: Nastavenie aktívneho roku
+        archived: false   // PRIDANÉ: Nové transakcie nie sú archivované
     };
 
     // Základná validácia pred odoslaním
@@ -103,7 +106,7 @@ async function handleFormSubmit(e, user, db, refreshCallback) {
             showToast("Transakcia bola úspešne aktualizovaná", "success");
             
             editingTransactionId = null;
-            resetSubmitButton(); // Funkcia definovaná v transactions.js
+            resetSubmitButton();
         } else {
             // Režim pridania novej transakcie
             txData.createdAt = new Date();
@@ -113,7 +116,6 @@ async function handleFormSubmit(e, user, db, refreshCallback) {
             
             // Špeciálna logika pre automatické odvody
             if (txData.category === 'PD - mzda' && txData.type === 'Príjem') {
-                // Confirm ponechávame, pretože vyžaduje interakciu (Áno/Nie)
                 if (confirm("Pridať automatické odvody a daň k tejto mzde?")) {
                     await generateAutoTaxes(txData, user, db);
                     showToast("Automatické odvody boli vygenerované", "success");
@@ -126,7 +128,6 @@ async function handleFormSubmit(e, user, db, refreshCallback) {
         refreshCallback(); 
 
     } catch (error) {
-        // Nahradenie alertu toastom pre chyby
         console.error("Firestore error:", error);
         showToast("Chyba pri ukladaní: " + error.message, "danger");
     }
@@ -137,28 +138,59 @@ async function generateAutoTaxes(sourceTx, user, db) {
     const dds = 15.00;
     const tax = (sourceTx.amount - insurance) * 0.19;
     
-    const base = { uid: user.uid, date: sourceTx.date, type: 'Výdaj', account: 'banka', createdAt: new Date() };
+    const base = { 
+        uid: user.uid, 
+        date: sourceTx.date, 
+        type: 'Výdaj', 
+        account: 'banka', 
+        year: activeYear,      // PRIDANÉ
+        archived: false,       // PRIDANÉ
+        createdAt: new Date() 
+    };
     
     await addDoc(collection(db, "transactions"), { ...base, category: 'VD - poistenie', note: 'Auto odvody', amount: parseFloat(insurance.toFixed(2)) });
     await addDoc(collection(db, "transactions"), { ...base, category: 'VD - DDS', note: 'Auto DDS', amount: dds });
     await addDoc(collection(db, "transactions"), { ...base, category: 'VD - preddavok na daň', note: 'Auto daň', amount: parseFloat(tax.toFixed(2)) });
 }
 
-export function renderTransactions(transactions, db, refreshCallback) {
+// UPRAVENÉ: Pridaný parameter isReadOnly
+export function renderTransactions(transactions, db, refreshCallback, isReadOnly = false) {
     const tbody = document.getElementById('transactionsList');
     tbody.innerHTML = '';
 
-    // --- NOVÉ: Vytvoríme mapu kategórií z HTML Selectu ---
-    // Týmto získame "pekné názvy" (text) pre každé "value"
+    // Vytvoríme mapu kategórií z HTML Selectu
     const categorySelect = document.getElementById('txCategory');
     const categoryMap = {};
     if (categorySelect) {
         Array.from(categorySelect.options).forEach(opt => {
-            // Mapujeme VALUE (napr. "VD - Telekom") na TEXT (napr. "VD - internet")
             if (opt.value) categoryMap[opt.value] = opt.text;
         });
     }
-    // -----------------------------------------------------
+    
+    // NOVÉ: Ak je readonly režim, skryť formulár a zobraziť upozornenie
+    const formCard = document.querySelector('#transactionsView .card');
+    if (formCard) {
+        formCard.style.display = isReadOnly ? 'none' : 'block';
+    }
+    
+    // Pridať/skryť read-only banner
+    let readonlyBanner = document.getElementById('transactionsReadonlyBanner');
+    if (isReadOnly) {
+        if (!readonlyBanner) {
+            readonlyBanner = document.createElement('div');
+            readonlyBanner.id = 'transactionsReadonlyBanner';
+            readonlyBanner.className = 'readonly-notice';
+            readonlyBanner.innerHTML = `
+                <i class="fa-solid fa-lock"></i>
+                <span>Tento rok je uzavretý - transakcie sú iba na čítanie</span>
+            `;
+            const transactionsView = document.getElementById('transactionsView');
+            transactionsView.insertBefore(readonlyBanner, transactionsView.firstChild);
+        }
+        readonlyBanner.style.display = 'flex';
+    } else if (readonlyBanner) {
+        readonlyBanner.style.display = 'none';
+    }
 
     if (transactions.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-slate-400">Žiadne transakcie</td></tr>`;
@@ -167,12 +199,12 @@ export function renderTransactions(transactions, db, refreshCallback) {
 
     transactions.forEach((tx) => {
         const formattedDate = tx.date ? tx.date.split('-').reverse().join('.') : '';
-        
-        // Tu použijeme mapu na zobrazenie. Ak sa hodnota nenájde (staré dáta), použije sa pôvodná hodnota.
         const displayCategory = categoryMap[tx.category] || tx.category;
 
         const row = document.createElement('tr');
         row.className = "hover:bg-slate-50 transition-colors border-b border-slate-100";
+        
+        // UPRAVENÉ: Podmienené zobrazenie tlačidiel edit/delete
         row.innerHTML = `
           <td class="px-4 py-3 font-mono text-xs">${formattedDate}</td> 
           <td class="px-4 py-3 text-xs">${tx.number ?? ''}</td>
@@ -183,18 +215,24 @@ export function renderTransactions(transactions, db, refreshCallback) {
           <td class="px-4 py-3 text-right text-green-600 font-bold">${tx.type === 'Príjem' ? tx.amount.toFixed(2) + ' €' : ''}</td>
           <td class="px-4 py-3 text-right text-red-500 font-bold">${tx.type === 'Výdaj' ? tx.amount.toFixed(2) + ' €' : ''}</td>
           <td class="px-4 py-3 text-center">
-            <button class="edit-btn text-blue-500 hover:text-blue-700 mx-1"><i class="fa-solid fa-pen"></i></button>
-            <button class="delete-btn text-red-400 hover:text-red-600 mx-1"><i class="fa-solid fa-trash"></i></button>
+            ${isReadOnly ? 
+                '<span class="text-slate-400"><i class="fa-solid fa-lock"></i></span>' : 
+                `<button class="edit-btn text-blue-500 hover:text-blue-700 mx-1"><i class="fa-solid fa-pen"></i></button>
+                 <button class="delete-btn text-red-400 hover:text-red-600 mx-1"><i class="fa-solid fa-trash"></i></button>`
+            }
           </td>
         `;
         
-        row.querySelector('.edit-btn').addEventListener('click', () => loadIntoForm(tx));
-        row.querySelector('.delete-btn').addEventListener('click', async () => {
-            if(confirm("Zmazať?")) {
-                await deleteDoc(doc(db, "transactions", tx.id));
-                refreshCallback();
-            }
-        });
+        // NOVÉ: Event listenery len ak nie je readonly
+        if (!isReadOnly) {
+            row.querySelector('.edit-btn').addEventListener('click', () => loadIntoForm(tx));
+            row.querySelector('.delete-btn').addEventListener('click', async () => {
+                if(confirm("Zmazať?")) {
+                    await deleteDoc(doc(db, "transactions", tx.id));
+                    refreshCallback();
+                }
+            });
+        }
 
         tbody.appendChild(row);
     });
@@ -205,7 +243,6 @@ function loadIntoForm(tx) {
     document.getElementById('txNumber').value = tx.number || '';
     document.getElementById('txType').value = tx.type;
     document.getElementById('txAccount').value = tx.account;
-    // Tu nechávame pôvodnú hodnotu (napr. VD - Telekom), aby sa select v HTML správne nastavil
     document.getElementById('txCategory').value = tx.category; 
     document.getElementById('txNote').value = tx.note || '';
     document.getElementById('txAmount').value = tx.amount;

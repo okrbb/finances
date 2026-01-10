@@ -12,26 +12,41 @@ import { setupTransactionEvents, renderTransactions } from './views/transactions
 import { setupReportEvents } from './views/reports.js';
 import { initSettings, loadUserProfile, setupBackup } from './views/settings.js';
 import { setupSalaryImport } from './views/salaryImport.js';
+import { initYearClosure } from './views/yearClosure.js';
+
+// NOVÉ: Import year managementu
+import { 
+    migrateToYearSystem, 
+    getUserActiveYear,
+    getArchivedYears,
+    checkYearClosureNeeded,
+    switchToYear
+} from './yearManager.js';
 
 let currentUser = null;
 let transactions = []; 
+let currentYear = 2025; // Aktívne zobrazený rok
+let activeYear = 2025;  // Skutočný aktívny rok používateľa
+let isViewingArchive = false; // Či sa pozeráme na archív
 
 // --- 1. SETUP GLOBAL LISTENERS ---
-// Tieto listenery sa nastavia raz pri štarte aplikácie
 setupBudgetEvents(db, () => currentUser);
 setupTransactionEvents(db, () => currentUser, refreshData);
 setupReportEvents(db, () => transactions);
 initSettings(db, () => currentUser);
-
-// NOVÉ: Nastavenie listenera pre export zálohy (JSON)
 setupBackup(db, () => currentUser);
+initYearClosure(db, () => currentUser, () => activeYear);
 
 // --- AUTH LOGIC ---
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('mainApp').style.display = 'flex';
+        
+        // NOVÉ: Migrácia a načítanie year systému
+        await initializeYearSystem();
+        
         setupImportEvents(db, currentUser, refreshData);
         setupSalaryImport(db, currentUser, refreshData);
         refreshData();
@@ -41,6 +56,205 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('mainApp').style.display = 'none';
     }
 });
+
+// NOVÉ: Inicializácia year systému
+async function initializeYearSystem() {
+    try {
+        // 1. Spustiť migráciu (ak je potrebná)
+        activeYear = await migrateToYearSystem(currentUser, db);
+        currentYear = activeYear;
+        
+        // 2. Načítať zoznam archívnych rokov
+        const archivedYears = await getArchivedYears(currentUser, db);
+        
+        // 3. Aktualizovať UI s year selector
+        updateYearSelector(activeYear, archivedYears);
+        
+        // 4. Skontrolovať či je potrebné uzavrieť rok
+        const closureCheck = checkYearClosureNeeded(activeYear);
+        if (closureCheck.needed) {
+            showYearClosureBanner(activeYear);
+        }
+        
+        console.log(`✅ Year system inicializovaný: aktívny rok ${activeYear}`);
+        
+    } catch (error) {
+        console.error("Chyba pri inicializácii year systému:", error);
+    }
+}
+
+// NOVÉ: Aktualizácia year selectora v UI
+function updateYearSelector(active, archived) {
+    const yearDisplay = document.getElementById('currentYearDisplay');
+    const yearDropdown = document.getElementById('yearDropdown');
+    
+    if (!yearDisplay || !yearDropdown) {
+        console.warn("Year selector elementy nenájdené v HTML");
+        return;
+    }
+    
+    // Nastaviť aktuálny rok
+    yearDisplay.textContent = currentYear;
+    
+    // Vyčistiť dropdown
+    yearDropdown.innerHTML = '';
+    
+    // Pridať aktívny rok
+    const activeItem = document.createElement('div');
+    activeItem.className = 'year-dropdown-item';
+    activeItem.innerHTML = `
+        <span class="year-number">${active}</span>
+        <span class="year-badge active">Aktívny</span>
+    `;
+    activeItem.addEventListener('click', () => {
+        selectYear(active);
+    });
+    yearDropdown.appendChild(activeItem);
+    
+    // Pridať archívne roky (zoradené zostupne)
+    archived.sort((a, b) => b - a).forEach(year => {
+        const item = document.createElement('div');
+        item.className = 'year-dropdown-item';
+        item.innerHTML = `
+            <span class="year-number">${year}</span>
+            <span class="year-badge archived">Uzavretý</span>
+        `;
+        item.addEventListener('click', () => {
+            selectYear(year);
+        });
+        yearDropdown.appendChild(item);
+    });
+    
+    // Pridať link na archív (ak existujú archívne roky)
+    if (archived.length > 0) {
+        const divider = document.createElement('div');
+        divider.className = 'year-dropdown-divider';
+        yearDropdown.appendChild(divider);
+        
+        const archiveLink = document.createElement('div');
+        archiveLink.className = 'year-dropdown-item archive-link';
+        archiveLink.innerHTML = '<i class="fa-solid fa-archive"></i> Archív rokov';
+        archiveLink.addEventListener('click', () => {
+            showArchiveView();
+        });
+        yearDropdown.appendChild(archiveLink);
+    }
+}
+
+// NOVÉ: Výber roka
+async function selectYear(year) {
+    try {
+        const result = await switchToYear(year, currentUser, db);
+        
+        if (result) {
+            currentYear = result.year;
+            isViewingArchive = result.isArchived;
+            
+            // Zavrieť dropdown
+            document.getElementById('yearDropdown').classList.remove('show');
+            
+            // Aktualizovať display
+            document.getElementById('currentYearDisplay').textContent = year;
+            
+            // Zobraziť/skryť archive banner
+            if (isViewingArchive) {
+                showArchiveBanner(year);
+            } else {
+                hideArchiveBanner();
+            }
+            
+            // Obnoviť dáta
+            await refreshData();
+        }
+    } catch (error) {
+        console.error("Chyba pri výbere roka:", error);
+    }
+}
+
+// NOVÉ: Banner pre archívny režim
+function showArchiveBanner(year) {
+    let banner = document.getElementById('archiveBanner');
+    
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'archiveBanner';
+        banner.className = 'archive-banner';
+        
+        const mainApp = document.getElementById('mainApp');
+        mainApp.insertBefore(banner, mainApp.firstChild);
+    }
+    
+    banner.innerHTML = `
+        <div class="archive-banner-content">
+            <i class="fa-solid fa-archive"></i>
+            <span>ARCHÍVNY REŽIM - ROK ${year}</span>
+            <span class="archive-banner-note">Tento rok je uzavretý a iba na čítanie</span>
+            <button id="btnBackToActive" class="btn-back-to-active">
+                <i class="fa-solid fa-arrow-left"></i> Späť na ${activeYear}
+            </button>
+        </div>
+    `;
+    
+    banner.style.display = 'flex';
+    
+    // Event listener pre návrat
+    document.getElementById('btnBackToActive').addEventListener('click', () => {
+        selectYear(activeYear);
+    });
+}
+
+function hideArchiveBanner() {
+    const banner = document.getElementById('archiveBanner');
+    if (banner) {
+        banner.style.display = 'none';
+    }
+}
+
+// NOVÉ: Banner pre uzavretie roka
+function showYearClosureBanner(year) {
+    let banner = document.getElementById('closureBanner');
+    
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'closureBanner';
+        banner.className = 'closure-banner';
+        
+        const mainApp = document.getElementById('mainApp');
+        mainApp.insertBefore(banner, mainApp.firstChild);
+    }
+    
+    banner.innerHTML = `
+        <div class="closure-banner-content">
+            <i class="fa-solid fa-calendar-check"></i>
+            <span>BLÍŽI SA KONIEC ROKA ${year}!</span>
+            <span class="closure-banner-note">Nezabudnite uzavrieť rok a pripraviť daňové priznanie</span>
+            <button id="btnGoToClosure" class="btn-go-to-closure">
+                <i class="fa-solid fa-lock"></i> Prejsť na uzavretie roka
+            </button>
+            <button id="btnDismissClosure" class="btn-dismiss">
+                <i class="fa-solid fa-times"></i>
+            </button>
+        </div>
+    `;
+    
+    banner.style.display = 'flex';
+    
+    // Event listenery
+    document.getElementById('btnGoToClosure').addEventListener('click', () => {
+        // Prepnúť na nový tab "Uzavretie roka"
+        document.querySelector('[data-view="yearClosure"]')?.click();
+    });
+    
+    document.getElementById('btnDismissClosure').addEventListener('click', () => {
+        banner.style.display = 'none';
+        localStorage.setItem('dismissedClosureBanner_' + year, 'true');
+    });
+    
+    // Skontrolovať či už bol banner dismissed
+    if (localStorage.getItem('dismissedClosureBanner_' + year) === 'true') {
+        banner.style.display = 'none';
+    }
+}
 
 // Login / Logout Eventy
 const loginForm = document.getElementById('loginForm');
@@ -55,7 +269,6 @@ if(loginForm) {
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
     await signOut(auth); 
-    // Po odhlásení preistotu reloadneme stránku pre vyčistenie stavu
     location.reload();
 });
 
@@ -66,16 +279,14 @@ async function refreshData() {
         return;
     }
     
-    console.log("Sťahujem dáta z Firestore pre:", currentUser.uid);
+    console.log(`Sťahujem dáta z Firestore pre rok ${currentYear}...`);
 
     try {
-        // 1. Načítať User Profile a daňové konštanty
-        // Najprv zavoláme vizuálne načítanie do inputov v nastaveniach
+        // 1. Načítať User Profile
         await loadUserProfile(currentUser, db);
 
-        // Získame dáta profilu aj pre potreby výpočtov v dashboarde
         const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        let config = { rentExemption: 500, taxRate: 0.19 }; // Default hodnoty
+        let config = { rentExemption: 500, taxRate: 0.19 };
         
         if (userDoc.exists()) {
             const userData = userDoc.data();
@@ -83,13 +294,14 @@ async function refreshData() {
             if (userData.taxRate !== undefined) config.taxRate = userData.taxRate;
         }
 
-        // 2. Načítať Rozpočet (pre aktuálne vybraný mesiac)
-        loadBudget(currentUser, db);
+        // 2. Načítať Rozpočet (pre aktuálny rok)
+        loadBudget(currentUser, db, currentYear);
 
-        // 3. Načítať Transakcie z Firestore
+        // 3. Načítať Transakcie pre zobrazený rok (UPRAVENÉ)
         const q = query(
             collection(db, "transactions"), 
-            where("uid", "==", currentUser.uid), 
+            where("uid", "==", currentUser.uid),
+            where("year", "==", currentYear), // NOVÝ FILTER
             orderBy("date", "desc")
         );
         
@@ -99,14 +311,12 @@ async function refreshData() {
             transactions.push({ id: doc.id, ...doc.data() });
         });
         
-        // Aktualizácia Dashboardu s dynamickými konštantami
+        // Aktualizácia UI
         renderDashboard(transactions, config);
-        
-        // Vykreslenie tabuľky transakcií
-        renderTransactions(transactions, db, refreshData); 
+        renderTransactions(transactions, db, refreshData, isViewingArchive); 
         
     } catch (error) { 
-        console.error("Chyba pri osviežovaní dát:", error); 
+        console.error("Chyba pri osvieživovaní dát:", error); 
     }
 }
 
@@ -117,19 +327,30 @@ allNavButtons.forEach(btn => {
     btn.addEventListener('click', () => {
         const viewName = btn.dataset.view;
 
-        // Deaktivovať všetky navigačné tlačidlá
         allNavButtons.forEach(b => b.classList.remove('active'));
-
-        // Aktivovať tlačidlá pre vybraný view (sidebar aj mobilné menu)
         document.querySelectorAll(`[data-view="${viewName}"]`).forEach(b => b.classList.add('active'));
 
-        // Skryť všetky pohľady (views)
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
 
-        // Zobraziť vybraný pohľad
         const targetView = document.getElementById(`${viewName}View`);
         if (targetView) {
             targetView.classList.add('active');
         }
     });
 });
+
+// NOVÉ: Toggle year dropdown
+document.getElementById('yearSelectorBtn')?.addEventListener('click', () => {
+    const dropdown = document.getElementById('yearDropdown');
+    dropdown.classList.toggle('show');
+});
+
+// Zavrieť dropdown pri kliknutí mimo
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.year-selector')) {
+        document.getElementById('yearDropdown')?.classList.remove('show');
+    }
+});
+
+// Export pre použitie v iných moduloch
+export { currentYear, activeYear, isViewingArchive };
