@@ -118,9 +118,10 @@ async function loadBudgetForMonth(user, db, yearMonth) {
     document.getElementById('budgetStatus').textContent = '';
 
     try {
-        // UPRAVENÉ: Document ID teraz obsahuje year
-        const docId = `${user.uid}_${yearMonth}_${currentBudgetYear}`;
+        // Document ID vo formáte: uid_yearMonth (rok je ako pole v dokumente)
+        const docId = `${user.uid}_${yearMonth}`;
         const docSnap = await getDoc(doc(db, 'budgets', docId));
+        
         if (docSnap.exists()) {
             const data = docSnap.data();
             allInputs.forEach(input => {
@@ -152,8 +153,8 @@ async function saveAllBudget(user, db, yearMonth) {
     });
 
     try {
-        // UPRAVENÉ: Document ID teraz obsahuje year
-        const docId = `${user.uid}_${yearMonth}_${currentBudgetYear}`;
+        // Document ID vo formáte: uid_yearMonth (rok je ako pole v dokumente)
+        const docId = `${user.uid}_${yearMonth}`;
         await setDoc(doc(db, 'budgets', docId), budgetData, { merge: true });
         statusElem.textContent = 'Uložené ✓';
         statusElem.className = 'text-success';
@@ -269,9 +270,9 @@ async function performCopy(user, db, targetYear) {
     if (!hasData) return showToast("Aktuálny mesiac je prázdny", "danger");
 
     try {
-        // UPRAVENÉ: Document ID teraz obsahuje year
+        // Document ID vo formáte: uid_yearMonth (rok je ako pole v dokumente)
         const promises = targetMonths.map(targetDate => {
-            const docId = `${user.uid}_${targetDate}_${targetYear}`;
+            const docId = `${user.uid}_${targetDate}`;
             return setDoc(doc(db, 'budgets', docId), dataToCopy, { merge: true });
         });
         await Promise.all(promises);
@@ -350,8 +351,8 @@ async function exportSpecificMonthsExcel(user, db, selectedMonths, exportYear) {
 
         const budgetDocs = {};
         for (const monthId of selectedMonths) {
-            // UPRAVENÉ: Document ID teraz obsahuje year
-            const docId = `${user.uid}_${monthId}_${exportYear}`;
+            // Document ID vo formáte: uid_yearMonth (rok je ako pole v dokumente)
+            const docId = `${user.uid}_${monthId}`;
             const snap = await getDoc(doc(db, 'budgets', docId));
             if (snap.exists()) budgetDocs[monthId] = snap.data();
         }
