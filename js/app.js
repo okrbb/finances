@@ -12,7 +12,7 @@ import { setupTransactionEvents, renderTransactions } from './views/transactions
 import { setupReportEvents } from './views/reports.js';
 import { initSettings, loadUserProfile, setupBackup } from './views/settings.js';
 import { setupSalaryImport } from './views/salaryImport.js';
-import { initYearClosure } from './views/yearClosure.js';
+import { initYearClosure, updateYearLabels } from './views/yearClosure.js';
 
 // Import utils
 import { showLoading, hideLoading } from './utils.js';
@@ -76,6 +76,9 @@ async function initializeYearSystem() {
         
         // 3. Aktualizovať UI s year selector
         updateYearSelector(activeYear, archivedYears);
+        
+        // 3b. Aktualizovať rok v Year Closure view
+        updateYearLabels(activeYear);
         
         // 4. Skontrolovať či je potrebné uzavrieť rok
         // OPRAVA: Nekontrolovať ak je predchádzajúci rok už uzavretý
@@ -185,6 +188,9 @@ async function selectYear(year) {
             
             // Aktualizovať display
             document.getElementById('currentYearDisplay').textContent = year;
+            
+            // Aktualizovať rok v Year Closure view
+            updateYearLabels(year);
             
             // Zobraziť/skryť archive banner
             if (isViewingArchive) {

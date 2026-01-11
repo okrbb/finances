@@ -1,4 +1,4 @@
-const CACHE_NAME = 'danova-evidencia-v5';
+const CACHE_NAME = 'danova-evidencia-v6';
 
 // Zoznam súborov na statické cachovanie
 const ASSETS_TO_CACHE = [
@@ -33,8 +33,14 @@ self.addEventListener('install', (event) => {
             return cache.addAll(ASSETS_TO_CACHE);
         })
     );
-    // Vynúti prechod zo stavu "waiting" do "active"
-    self.skipWaiting();
+    // NEPOUŽÍVAME skipWaiting() automaticky - počkáme na potvrdenie od používateľa
+});
+
+// Počúvanie správy od klienta na okamžitú aktiváciu
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 // 2. Aktivácia - vyčistenie starých cache a okamžité prevzatie kontroly

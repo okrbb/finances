@@ -412,6 +412,9 @@ async function generatePdfReport(data) {
 /**
  * Aktualizovať rok v labeloch Year Closure view
  */
+/**
+ * Aktualizovať labely s rokom
+ */
 function updateYearLabels(year) {
     const closureYearLabel = document.getElementById('closureYearLabel');
     const yearToClose = document.getElementById('yearToClose');
@@ -423,3 +426,6 @@ function updateYearLabels(year) {
     if (nextYear) nextYear.textContent = year + 1;
     if (yearToCloseBtn) yearToCloseBtn.textContent = year;
 }
+
+// Export funkcie pre použitie v app.js
+export { updateYearLabels };
