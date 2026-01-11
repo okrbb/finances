@@ -72,29 +72,7 @@ export function setupReportEvents(db, getTransactionsCallback) {
         const filteredTx = filterTransactions(allTransactions);
         if (filteredTx.length === 0) return alert("Žiadne dáta.");
 
-        const tableBody = [[
-            { text: 'Dátum', style: 'tableHeader' },
-            { text: 'Druh', style: 'tableHeader' },
-            { text: 'Kategória', style: 'tableHeader' },
-            { text: 'Popis', style: 'tableHeader' },
-            { text: 'Suma', style: 'tableHeader', alignment: 'right' }
-        ]];
-
-        filteredTx.forEach(tx => {
-            tableBody.push([
-                { text: formatDate(tx.date), fontSize: 10 },
-                { text: tx.type, fontSize: 10 },
-                { text: categoryMap[tx.category] || tx.category || '-', fontSize: 10 },
-                { text: tx.note || '-', fontSize: 10 },
-                { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 10, bold: true }
-            ]);
-        });
-
-        const docDef = {
-            content: [{ text: 'FINANČNÝ REPORT', style: 'headerTitle' }, { table: { body: tableBody } }],
-            styles: { headerTitle: { fontSize: 14, bold: true }, tableHeader: { bold: true, fillColor: '#f1f5f9' } }
-        };
-        pdfMake.createPdf(docDef).download('Report.pdf');
+        exportMonthlyPdfReport(filteredTx);
     });
 
     // NOVÉ: Export Daňového draftu
@@ -275,4 +253,228 @@ function exportTaxDraftPdf(stats) {
         styles: { header: { fontSize: 16, bold: true }, subheader: { fontSize: 12, bold: true, color: '#2563eb' } }
     };
     pdfMake.createPdf(docDefinition).download(`Danovy_Draft_${year}.pdf`);
+}
+
+// Nová funkcia: Export mesačného prehľadu do PDF
+function exportMonthlyPdfReport(transactions) {
+    // Zoskupiť transakcie podľa mesiacov
+    const monthlyData = {};
+    const MONTH_NAMES = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
+    
+    transactions.forEach(tx => {
+        const date = new Date(tx.date);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[key]) {
+            monthlyData[key] = {
+                year: year,
+                month: month,
+                income: [],
+                expense: [],
+                totalIncome: 0,
+                totalExpense: 0
+            };
+        }
+        
+        if (tx.type === 'Príjem') {
+            monthlyData[key].income.push(tx);
+            monthlyData[key].totalIncome += tx.amount;
+        } else {
+            monthlyData[key].expense.push(tx);
+            monthlyData[key].totalExpense += tx.amount;
+        }
+    });
+    
+    // Vytvorenie PDF obsahu
+    const content = [
+        { text: 'MESAČNÝ FINANČNÝ PREHĽAD', style: 'mainHeader', alignment: 'center', margin: [0, 0, 0, 20] }
+    ];
+    
+    // Zoradiť mesiace chronologicky
+    const sortedKeys = Object.keys(monthlyData).sort();
+    
+    sortedKeys.forEach((key, index) => {
+        const data = monthlyData[key];
+        const monthName = MONTH_NAMES[data.month];
+        
+        // Hlavička mesiaca
+        content.push({
+            text: `${monthName} ${data.year}`,
+            style: 'monthHeader',
+            margin: index > 0 ? [0, 15, 0, 10] : [0, 0, 0, 10]
+        });
+        
+        // Tabuľka príjmov
+        if (data.income.length > 0) {
+            content.push({ text: 'PRÍJMY', style: 'sectionHeader', margin: [0, 5, 0, 5] });
+            
+            const incomeTableBody = [
+                [
+                    { text: 'Dátum', style: 'tableHeader' },
+                    { text: 'Kategória', style: 'tableHeader' },
+                    { text: 'Popis', style: 'tableHeader' },
+                    { text: 'Suma', style: 'tableHeader', alignment: 'right' }
+                ]
+            ];
+            
+            data.income.forEach(tx => {
+                incomeTableBody.push([
+                    { text: formatDate(tx.date), fontSize: 9 },
+                    { text: categoryMap[tx.category] || tx.category || '-', fontSize: 9 },
+                    { text: tx.note || '-', fontSize: 9 },
+                    { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 9 }
+                ]);
+            });
+            
+            content.push({
+                table: {
+                    widths: ['auto', '*', '*', 'auto'],
+                    body: incomeTableBody
+                },
+                layout: {
+                    fillColor: function (rowIndex) {
+                        return rowIndex === 0 ? '#d1fae5' : null;
+                    }
+                }
+            });
+        }
+        
+        // Tabuľka výdavkov
+        if (data.expense.length > 0) {
+            content.push({ text: 'VÝDAVKY', style: 'sectionHeader', margin: [0, 10, 0, 5] });
+            
+            const expenseTableBody = [
+                [
+                    { text: 'Dátum', style: 'tableHeader' },
+                    { text: 'Kategória', style: 'tableHeader' },
+                    { text: 'Popis', style: 'tableHeader' },
+                    { text: 'Suma', style: 'tableHeader', alignment: 'right' }
+                ]
+            ];
+            
+            data.expense.forEach(tx => {
+                expenseTableBody.push([
+                    { text: formatDate(tx.date), fontSize: 9 },
+                    { text: categoryMap[tx.category] || tx.category || '-', fontSize: 9 },
+                    { text: tx.note || '-', fontSize: 9 },
+                    { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 9 }
+                ]);
+            });
+            
+            content.push({
+                table: {
+                    widths: ['auto', '*', '*', 'auto'],
+                    body: expenseTableBody
+                },
+                layout: {
+                    fillColor: function (rowIndex) {
+                        return rowIndex === 0 ? '#fee2e2' : null;
+                    }
+                }
+            });
+        }
+        
+        // Mesačný sumár
+        const balance = data.totalIncome - data.totalExpense;
+        content.push({
+            style: 'summary',
+            margin: [0, 10, 0, 0],
+            table: {
+                widths: ['*', 'auto'],
+                body: [
+                    [
+                        { text: 'Celkové príjmy:', bold: true, fontSize: 10 },
+                        { text: data.totalIncome.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 10, color: '#059669' }
+                    ],
+                    [
+                        { text: 'Celkové výdavky:', bold: true, fontSize: 10 },
+                        { text: data.totalExpense.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 10, color: '#dc2626' }
+                    ],
+                    [
+                        { text: 'Bilancia:', bold: true, fontSize: 11 },
+                        { text: balance.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 11, color: balance >= 0 ? '#059669' : '#dc2626' }
+                    ]
+                ]
+            },
+            layout: {
+                fillColor: function (rowIndex) {
+                    return rowIndex === 2 ? '#f1f5f9' : null;
+                },
+                hLineWidth: function (i, node) {
+                    return i === 2 || i === node.table.body.length ? 2 : 1;
+                }
+            }
+        });
+    });
+    
+    // Celkový sumár na konci
+    const totalIncome = sortedKeys.reduce((sum, key) => sum + monthlyData[key].totalIncome, 0);
+    const totalExpense = sortedKeys.reduce((sum, key) => sum + monthlyData[key].totalExpense, 0);
+    const totalBalance = totalIncome - totalExpense;
+    
+    content.push({ text: '', pageBreak: 'before' });
+    content.push({ text: 'CELKOVÝ SUMÁR', style: 'mainHeader', alignment: 'center', margin: [0, 0, 0, 20] });
+    content.push({
+        table: {
+            widths: ['*', 'auto'],
+            body: [
+                [
+                    { text: 'Celkové príjmy za obdobie:', bold: true, fontSize: 12 },
+                    { text: totalIncome.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 12, color: '#059669' }
+                ],
+                [
+                    { text: 'Celkové výdavky za obdobie:', bold: true, fontSize: 12 },
+                    { text: totalExpense.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 12, color: '#dc2626' }
+                ],
+                [
+                    { text: 'CELKOVÁ BILANCIA:', bold: true, fontSize: 14 },
+                    { text: totalBalance.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 14, color: totalBalance >= 0 ? '#059669' : '#dc2626' }
+                ]
+            ]
+        },
+        layout: {
+            fillColor: function (rowIndex) {
+                return rowIndex === 2 ? '#e0e7ff' : '#f1f5f9';
+            },
+            hLineWidth: function () {
+                return 2;
+            }
+        }
+    });
+    
+    const docDefinition = {
+        content: content,
+        styles: {
+            mainHeader: {
+                fontSize: 18,
+                bold: true,
+                color: '#1e40af'
+            },
+            monthHeader: {
+                fontSize: 14,
+                bold: true,
+                color: '#2563eb'
+            },
+            sectionHeader: {
+                fontSize: 11,
+                bold: true,
+                color: '#64748b'
+            },
+            tableHeader: {
+                bold: true,
+                fontSize: 10,
+                color: '#334155'
+            },
+            summary: {
+                fontSize: 10
+            }
+        },
+        pageMargins: [40, 40, 40, 40]
+    };
+    
+    const filters = getFilters();
+    const fileName = `Mesacny_Report_${filters.dateFrom || 'all'}.pdf`;
+    pdfMake.createPdf(docDefinition).download(fileName);
 }
