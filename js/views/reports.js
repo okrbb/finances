@@ -483,7 +483,25 @@ function exportRentPdfReport(allTransactions) {
     // Filtrovať iba transakcie súvisiace s prenájmom
     const rentTransactions = allTransactions.filter(tx => {
         const cat = (tx.category || '').toLowerCase();
-        return cat.includes('prenájom') || cat.includes('prenajom');
+        
+        // Príjmy z prenájmu
+        if (tx.type === 'Príjem' && cat.includes('prenájom')) {
+            return true;
+        }
+        
+        // Výdavky súvisiace s prenájmom (rovnaká logika ako v utils.js)
+        if (tx.type === 'Výdaj' && (
+            cat.includes('bytové družstvo') || 
+            cat.includes('telekom') || 
+            cat.includes('4ka') || 
+            cat.includes('zse') || 
+            cat.includes('msú trnava') || 
+            cat.includes('vd - iné')
+        )) {
+            return true;
+        }
+        
+        return false;
     });
     
     if (rentTransactions.length === 0) {
