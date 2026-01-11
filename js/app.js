@@ -273,14 +273,12 @@ function showYearClosureBanner(year) {
 // Login / Logout Eventy
 const loginForm = document.getElementById('loginForm');
 if(loginForm) {
-    // Načítať uložené prihlasovací údaje pri načítaní stránky
+    // Načítať uložený email pri načítaní stránky
     const savedEmail = localStorage.getItem('rememberedEmail');
-    const savedPassword = localStorage.getItem('rememberedPassword');
     const rememberCheckbox = document.getElementById('rememberMe');
     
-    if (savedEmail && savedPassword) {
+    if (savedEmail) {
         document.getElementById('loginEmail').value = savedEmail;
-        document.getElementById('loginPassword').value = savedPassword;
         if (rememberCheckbox) rememberCheckbox.checked = true;
     }
     
@@ -293,14 +291,14 @@ if(loginForm) {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             
-            // Uložiť alebo vymazať prihlasovací údaje podľa checkboxu
+            // Uložiť alebo vymazať email podľa checkboxu
             if (remember) {
                 localStorage.setItem('rememberedEmail', email);
-                localStorage.setItem('rememberedPassword', password);
             } else {
                 localStorage.removeItem('rememberedEmail');
-                localStorage.removeItem('rememberedPassword');
             }
+            // Vymazať uložené heslo (ak tam náhodou bolo z predošlej verzie)
+            localStorage.removeItem('rememberedPassword');
         } catch (error) { 
             alert('Chyba prihlásenia: ' + error.message); 
         }
