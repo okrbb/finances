@@ -1,5 +1,6 @@
 /* js/views/reports.js */
 import { formatDate, calculateTaxStats } from '../utils.js';
+import { currentYear } from '../app.js';
 
 let chartInstance = null;
 let pieChartInstance = null;
@@ -474,7 +475,8 @@ function exportMonthlyPdfReport(transactions) {
     };
     
     const filters = getFilters();
-    const fileName = `Mesacny_Report_${filters.dateFrom || 'all'}.pdf`;
+    const year = sortedKeys.length > 0 ? sortedKeys[0].split('-')[0] : currentYear;
+    const fileName = `Mesacny_Report_${year}.pdf`;
     pdfMake.createPdf(docDefinition).download(fileName);
 }
 
@@ -764,7 +766,7 @@ function exportRentPdfReport(allTransactions) {
         pageMargins: [40, 40, 40, 40]
     };
     
-    const currentYear = new Date().getFullYear();
-    const fileName = `Prenajom_${currentYear}.pdf`;
+    const year = sortedKeys.length > 0 ? sortedKeys[0].split('-')[0] : currentYear;
+    const fileName = `Prenajom_${year}.pdf`;
     pdfMake.createPdf(docDefinition).download(fileName);
 }
