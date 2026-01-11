@@ -75,11 +75,10 @@ export function setupReportEvents(db, getTransactionsCallback) {
         exportMonthlyPdfReport(filteredTx);
     });
 
-    // NOVÉ: Export Daňového draftu
+    // Export PDF pre prenájom
     document.getElementById('exportTaxDraftBtn')?.addEventListener('click', () => {
         const transactions = getTransactionsCallback();
-        const stats = calculateTaxStats(transactions);
-        exportTaxDraftPdf(stats);
+        exportRentPdfReport(transactions);
     });
 }
 
@@ -476,5 +475,278 @@ function exportMonthlyPdfReport(transactions) {
     
     const filters = getFilters();
     const fileName = `Mesacny_Report_${filters.dateFrom || 'all'}.pdf`;
+    pdfMake.createPdf(docDefinition).download(fileName);
+}
+
+// Nová funkcia: Export mesačného prehľadu pre prenájom
+function exportRentPdfReport(allTransactions) {
+    // Filtrovať iba transakcie súvisiace s prenájmom
+    const rentTransactions = allTransactions.filter(tx => {
+        const cat = (tx.category || '').toLowerCase();
+        return cat.includes('prenájom') || cat.includes('prenajom');
+    });
+    
+    if (rentTransactions.length === 0) {
+        alert("Žiadne transakcie súvisiace s prenájmom.");
+        return;
+    }
+    
+    // Zoskupiť transakcie podľa mesiacov
+    const monthlyData = {};
+    const MONTH_NAMES = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
+    
+    rentTransactions.forEach(tx => {
+        const date = new Date(tx.date);
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const key = `${year}-${String(month + 1).padStart(2, '0')}`;
+        
+        if (!monthlyData[key]) {
+            monthlyData[key] = {
+                year: year,
+                month: month,
+                income: [],
+                expense: [],
+                totalIncome: 0,
+                totalExpense: 0
+            };
+        }
+        
+        if (tx.type === 'Príjem') {
+            monthlyData[key].income.push(tx);
+            monthlyData[key].totalIncome += tx.amount;
+        } else {
+            monthlyData[key].expense.push(tx);
+            monthlyData[key].totalExpense += tx.amount;
+        }
+    });
+    
+    // Vytvorenie PDF obsahu
+    const content = [
+        { text: 'PREHĽAD PRENÁJMU', style: 'mainHeader', alignment: 'center', margin: [0, 0, 0, 10] },
+        { text: 'Príjmy a výdavky súvisiace s prenájmom nehnuteľnosti', style: 'subtitle', alignment: 'center', margin: [0, 0, 0, 20] }
+    ];
+    
+    // Zoradiť mesiace chronologicky
+    const sortedKeys = Object.keys(monthlyData).sort();
+    
+    sortedKeys.forEach((key, index) => {
+        const data = monthlyData[key];
+        const monthName = MONTH_NAMES[data.month];
+        
+        // Hlavička mesiaca
+        content.push({
+            text: `${monthName} ${data.year}`,
+            style: 'monthHeader',
+            margin: index > 0 ? [0, 15, 0, 10] : [0, 0, 0, 10]
+        });
+        
+        // Tabuľka príjmov
+        if (data.income.length > 0) {
+            content.push({ text: 'PRÍJMY Z PRENÁJMU', style: 'sectionHeader', margin: [0, 5, 0, 5] });
+            
+            const incomeTableBody = [
+                [
+                    { text: 'Dátum', style: 'tableHeader' },
+                    { text: 'Kategória', style: 'tableHeader' },
+                    { text: 'Popis', style: 'tableHeader' },
+                    { text: 'Suma', style: 'tableHeader', alignment: 'right' }
+                ]
+            ];
+            
+            data.income.forEach(tx => {
+                incomeTableBody.push([
+                    { text: formatDate(tx.date), fontSize: 9 },
+                    { text: categoryMap[tx.category] || tx.category || '-', fontSize: 9 },
+                    { text: tx.note || '-', fontSize: 9 },
+                    { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 9 }
+                ]);
+            });
+            
+            content.push({
+                table: {
+                    widths: ['auto', '*', '*', 'auto'],
+                    body: incomeTableBody
+                },
+                layout: {
+                    fillColor: function (rowIndex) {
+                        return rowIndex === 0 ? '#d1fae5' : null;
+                    }
+                }
+            });
+        }
+        
+        // Tabuľka výdavkov
+        if (data.expense.length > 0) {
+            content.push({ text: 'VÝDAVKY SÚVISIACE S PRENÁJMOM', style: 'sectionHeader', margin: [0, 10, 0, 5] });
+            
+            const expenseTableBody = [
+                [
+                    { text: 'Dátum', style: 'tableHeader' },
+                    { text: 'Kategória', style: 'tableHeader' },
+                    { text: 'Popis', style: 'tableHeader' },
+                    { text: 'Suma', style: 'tableHeader', alignment: 'right' }
+                ]
+            ];
+            
+            data.expense.forEach(tx => {
+                expenseTableBody.push([
+                    { text: formatDate(tx.date), fontSize: 9 },
+                    { text: categoryMap[tx.category] || tx.category || '-', fontSize: 9 },
+                    { text: tx.note || '-', fontSize: 9 },
+                    { text: tx.amount.toFixed(2) + ' €', alignment: 'right', fontSize: 9 }
+                ]);
+            });
+            
+            content.push({
+                table: {
+                    widths: ['auto', '*', '*', 'auto'],
+                    body: expenseTableBody
+                },
+                layout: {
+                    fillColor: function (rowIndex) {
+                        return rowIndex === 0 ? '#fee2e2' : null;
+                    }
+                }
+            });
+        }
+        
+        // Mesačný sumár
+        const balance = data.totalIncome - data.totalExpense;
+        content.push({
+            style: 'summary',
+            margin: [0, 10, 0, 0],
+            table: {
+                widths: ['*', 'auto'],
+                body: [
+                    [
+                        { text: 'Príjmy z prenájmu:', bold: true, fontSize: 10 },
+                        { text: data.totalIncome.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 10, color: '#059669' }
+                    ],
+                    [
+                        { text: 'Výdavky na prenájom:', bold: true, fontSize: 10 },
+                        { text: data.totalExpense.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 10, color: '#dc2626' }
+                    ],
+                    [
+                        { text: 'Čistý príjem:', bold: true, fontSize: 11 },
+                        { text: balance.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 11, color: balance >= 0 ? '#059669' : '#dc2626' }
+                    ]
+                ]
+            },
+            layout: {
+                fillColor: function (rowIndex) {
+                    return rowIndex === 2 ? '#f1f5f9' : null;
+                },
+                hLineWidth: function (i, node) {
+                    return i === 2 || i === node.table.body.length ? 2 : 1;
+                }
+            }
+        });
+    });
+    
+    // Celkový sumár na konci
+    const totalIncome = sortedKeys.reduce((sum, key) => sum + monthlyData[key].totalIncome, 0);
+    const totalExpense = sortedKeys.reduce((sum, key) => sum + monthlyData[key].totalExpense, 0);
+    const totalBalance = totalIncome - totalExpense;
+    
+    content.push({ text: '', pageBreak: 'before' });
+    content.push({ text: 'CELKOVÝ SUMÁR PRENÁJMU', style: 'mainHeader', alignment: 'center', margin: [0, 0, 0, 20] });
+    
+    // Pridať informáciu o oslobodení
+    const exemptAmount = 500;
+    const taxableIncome = Math.max(0, totalIncome - exemptAmount);
+    
+    content.push({
+        table: {
+            widths: ['*', 'auto'],
+            body: [
+                [
+                    { text: 'Celkové príjmy z prenájmu:', bold: true, fontSize: 12 },
+                    { text: totalIncome.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 12, color: '#059669' }
+                ],
+                [
+                    { text: 'Celkové výdavky na prenájom:', bold: true, fontSize: 12 },
+                    { text: totalExpense.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 12, color: '#dc2626' }
+                ],
+                [
+                    { text: 'ČISTÝ PRÍJEM Z PRENÁJMU:', bold: true, fontSize: 14 },
+                    { text: totalBalance.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 14, color: totalBalance >= 0 ? '#059669' : '#dc2626' }
+                ]
+            ]
+        },
+        layout: {
+            fillColor: function (rowIndex) {
+                return rowIndex === 2 ? '#e0e7ff' : '#f1f5f9';
+            },
+            hLineWidth: function () {
+                return 2;
+            }
+        }
+    });
+    
+    // Daňové informácie
+    content.push({ text: '\nDAŇOVÉ INFORMÁCIE', style: 'monthHeader', margin: [0, 20, 0, 10] });
+    content.push({
+        table: {
+            widths: ['*', 'auto'],
+            body: [
+                [
+                    { text: 'Hrubý príjem z prenájmu', fontSize: 11 },
+                    { text: totalIncome.toFixed(2) + ' €', alignment: 'right', fontSize: 11 }
+                ],
+                [
+                    { text: 'Oslobodenie (§ 9 ods. 1 písm. g)', fontSize: 11, color: '#64748b' },
+                    { text: '- ' + exemptAmount.toFixed(2) + ' €', alignment: 'right', fontSize: 11, color: '#64748b' }
+                ],
+                [
+                    { text: 'Zdaniteľný príjem z prenájmu', bold: true, fontSize: 12 },
+                    { text: taxableIncome.toFixed(2) + ' €', alignment: 'right', bold: true, fontSize: 12, color: '#2563eb' }
+                ]
+            ]
+        },
+        layout: {
+            fillColor: function (rowIndex) {
+                return rowIndex === 2 ? '#dbeafe' : null;
+            }
+        }
+    });
+    
+    const docDefinition = {
+        content: content,
+        styles: {
+            mainHeader: {
+                fontSize: 18,
+                bold: true,
+                color: '#1e40af'
+            },
+            subtitle: {
+                fontSize: 11,
+                color: '#64748b',
+                italics: true
+            },
+            monthHeader: {
+                fontSize: 14,
+                bold: true,
+                color: '#2563eb'
+            },
+            sectionHeader: {
+                fontSize: 11,
+                bold: true,
+                color: '#64748b'
+            },
+            tableHeader: {
+                bold: true,
+                fontSize: 10,
+                color: '#334155'
+            },
+            summary: {
+                fontSize: 10
+            }
+        },
+        pageMargins: [40, 40, 40, 40]
+    };
+    
+    const currentYear = new Date().getFullYear();
+    const fileName = `Prenajom_${currentYear}.pdf`;
     pdfMake.createPdf(docDefinition).download(fileName);
 }
