@@ -74,7 +74,20 @@ export function setupBudgetEvents(db, getUserCallback) {
 export function loadBudget(user, db, year = 2025) {
     currentBudgetYear = year; // Uložiť aktuálny rok
     const monthInput = document.getElementById('budgetMonthSelect');
-    if (monthInput) loadBudgetForMonth(user, db, monthInput.value);
+    
+    if (monthInput) {
+        // Aktualizovať month selector na správny rok
+        const currentValue = monthInput.value;
+        const currentMonth = currentValue ? currentValue.split('-')[1] : '01';
+        const newValue = `${year}-${currentMonth}`;
+        
+        // Nastaviť nový mesiac len ak sa zmenil rok
+        if (currentValue.split('-')[0] !== String(year)) {
+            monthInput.value = newValue;
+        }
+        
+        loadBudgetForMonth(user, db, monthInput.value);
+    }
 }
 
 function calculateBudgetTotals() {
