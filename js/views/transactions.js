@@ -2,16 +2,17 @@
 
 import { showToast } from '../notifications.js';
 import { collection, addDoc, deleteDoc, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { activeYear } from '../app.js';
+import { validateDate, validateAmount, confirmAction } from '../utils.js';
 
 let editingTransactionId = null;
 
 // --- 1. Setup Events (Volané raz) ---
-export function setupTransactionEvents(db, getUserCallback, refreshDataCallback) {
+export function setupTransactionEvents(db, getUserCallback, getActiveYearCallback, refreshDataCallback) {
     const form = document.getElementById('transactionForm');
     const dateInput = document.getElementById('txDate');
     const categorySelect = document.getElementById('txCategory');
     const noteInput = document.getElementById('txNote');
+    const cancelBtn = document.getElementById('cancelEditBtn');
 
     const SK_MONTHS = ['január', 'február', 'marec', 'apríl', 'máj', 'jún', 'júl', 'august', 'september', 'október', 'november', 'december'];
     
@@ -62,7 +63,17 @@ export function setupTransactionEvents(db, getUserCallback, refreshDataCallback)
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             const user = getUserCallback();
-            if (user) await handleFormSubmit(e, user, db, refreshDataCallback);
+            if (user) await handleFormSubmit(e, user, db, getActiveYearCallback, refreshDataCallback);
+        });
+    }
+    
+    // Cancel Edit Button
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
+            editingTransactionId = null;
+            resetSubmitButton();
+            form.reset();
+            showToast("Úprava zrušená", "info");
         });
     }
 
@@ -77,26 +88,39 @@ export function setupTransactionEvents(db, getUserCallback, refreshDataCallback)
     });
 }
 
-async function handleFormSubmit(e, user, db, refreshCallback) {
+async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallback) {
+    const activeYear = getActiveYearCallback();
+    
     // Zhromaženie dát z formulára
+    const dateValue = document.getElementById('txDate').value;
+    const amountValue = document.getElementById('txAmount').value;
+    
+    // Validácia dátumu
+    const dateValidation = validateDate(dateValue, activeYear, false);
+    if (!dateValidation.valid) {
+        showToast(dateValidation.error, "warning");
+        return;
+    }
+    
+    // Validácia sumy
+    const amountValidation = validateAmount(amountValue);
+    if (!amountValidation.valid) {
+        showToast(amountValidation.error, "warning");
+        return;
+    }
+    
     const txData = {
         uid: user.uid,
-        date: document.getElementById('txDate').value,
+        date: dateValue,
         number: document.getElementById('txNumber').value,
         type: document.getElementById('txType').value,
         account: document.getElementById('txAccount').value,
         category: document.getElementById('txCategory').value, 
         note: document.getElementById('txNote').value,
-        amount: parseFloat(document.getElementById('txAmount').value),
-        year: activeYear, // PRIDANÉ: Nastavenie aktívneho roku
-        archived: false   // PRIDANÉ: Nové transakcie nie sú archivované
+        amount: amountValidation.value,
+        year: activeYear,
+        archived: false
     };
-
-    // Základná validácia pred odoslaním
-    if (isNaN(txData.amount) || txData.amount <= 0) {
-        showToast("Zadajte platnú sumu vyššiu ako 0", "warning");
-        return;
-    }
 
     try {
         if (editingTransactionId) {
@@ -116,7 +140,11 @@ async function handleFormSubmit(e, user, db, refreshCallback) {
             
             // Špeciálna logika pre automatické odvody
             if (txData.category === 'PD - mzda' && txData.type === 'Príjem') {
-                if (confirm("Pridať automatické odvody a daň k tejto mzde?")) {
+                const shouldGenerate = await confirmAction(
+                    "Chcete vygenerovať automatické odvody a daň k tejto mzde?",
+                    "Automatické odvody"
+                );
+                if (shouldGenerate) {
                     await generateAutoTaxes(txData, user, db);
                     showToast("Automatické odvody boli vygenerované", "success");
                 }
@@ -227,8 +255,13 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
         if (!isReadOnly) {
             row.querySelector('.edit-btn').addEventListener('click', () => loadIntoForm(tx));
             row.querySelector('.delete-btn').addEventListener('click', async () => {
-                if(confirm("Zmazať?")) {
+                const shouldDelete = await confirmAction(
+                    `Naozaj chcete zmazať transakciu "${tx.note}" (${tx.amount.toFixed(2)} €)?`,
+                    "Zmazať transakciu"
+                );
+                if (shouldDelete) {
                     await deleteDoc(doc(db, "transactions", tx.id));
+                    showToast("Transakcia bola zmazaná", "info");
                     refreshCallback();
                 }
             });
@@ -250,14 +283,28 @@ function loadIntoForm(tx) {
     editingTransactionId = tx.id;
     
     const submitBtn = document.querySelector('#transactionForm button[type="submit"]');
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    
     submitBtn.textContent = "Uložiť zmeny";
     submitBtn.classList.replace('bg-blue-600', 'bg-orange-500');
+    
+    // Zobraziť cancel tlačidlo
+    if (cancelBtn) {
+        cancelBtn.style.display = 'block';
+    }
     
     document.getElementById('transactionsView').scrollIntoView({ behavior: 'smooth' });
 }
 
 function resetSubmitButton() {
     const submitBtn = document.querySelector('#transactionForm button[type="submit"]');
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    
     submitBtn.textContent = "Pridať transakciu";
     submitBtn.classList.replace('bg-orange-500', 'bg-blue-600');
+    
+    // Skryť cancel tlačidlo
+    if (cancelBtn) {
+        cancelBtn.style.display = 'none';
+    }
 }

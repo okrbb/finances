@@ -10,6 +10,7 @@ import {
     getDoc, 
     setDoc 
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { validateDIC, validateIBAN, validateAmount } from '../utils.js';
 
 export function initSettings(db, getUserCallback) {
     const settingsForm = document.getElementById('settingsForm');
@@ -20,26 +21,59 @@ export function initSettings(db, getUserCallback) {
             
             const user = getUserCallback();
             if (!user) {
-                alert("Chyba: Nie ste prihlásený.");
+                showToast("Chyba: Nie ste prihlásený.", "danger");
+                return;
+            }
+
+            const dicValue = document.getElementById('settingsDIC').value;
+            const ibanValue = document.getElementById('settingsIBAN').value;
+            const rentExValue = document.getElementById('configRentExemption').value;
+            const taxRateValue = document.getElementById('configTaxRate').value;
+            
+            // Validácia DIČ
+            const dicValidation = validateDIC(dicValue);
+            if (!dicValidation.valid) {
+                showToast(dicValidation.error, "warning");
+                return;
+            }
+            
+            // Validácia IBAN
+            const ibanValidation = validateIBAN(ibanValue);
+            if (!ibanValidation.valid) {
+                showToast(ibanValidation.error, "warning");
+                return;
+            }
+            
+            // Validácia oslobodenia prenájmu
+            const rentExValidation = validateAmount(rentExValue);
+            if (!rentExValidation.valid) {
+                showToast("Oslobodenie prenájmu: " + rentExValidation.error, "warning");
+                return;
+            }
+            
+            // Validácia daňovej sadzby
+            const taxRate = parseFloat(taxRateValue);
+            if (isNaN(taxRate) || taxRate < 0 || taxRate > 1) {
+                showToast("Daňová sadzba musí byť medzi 0 a 1 (napr. 0.19 pre 19%)", "warning");
                 return;
             }
 
             const userData = {
                 name: document.getElementById('settingsName').value,
-                dic: document.getElementById('settingsDIC').value,
+                dic: dicValue,
                 address: document.getElementById('settingsAddress').value,
-                iban: document.getElementById('settingsIBAN').value,
+                iban: ibanValidation.value || ibanValue,
                 year: document.getElementById('settingsYear').value,
-                rentExemption: parseFloat(document.getElementById('configRentExemption').value) || 500,
-                taxRate: parseFloat(document.getElementById('configTaxRate').value) || 0.19
+                rentExemption: rentExValidation.value,
+                taxRate: taxRate
             };
             
             try {
-                // setDoc a doc už budú fungovať
                 await setDoc(doc(db, "users", user.uid), userData);
                 showToast("Nastavenia úspešne uložené", "success");
                 loadUserProfile(user, db); 
             } catch (err) {
+                console.error("Chyba ukladania nastavení:", err);
                 showToast("Chyba pri ukladaní: " + err.message, "danger");
             }
         });

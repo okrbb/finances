@@ -2,7 +2,7 @@
 
 import { auth, db } from './config.js';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import { collection, query, where, orderBy, getDocs, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import modulov
 import { setupImportEvents } from './views/import.js';
@@ -13,6 +13,9 @@ import { setupReportEvents } from './views/reports.js';
 import { initSettings, loadUserProfile, setupBackup } from './views/settings.js';
 import { setupSalaryImport } from './views/salaryImport.js';
 import { initYearClosure } from './views/yearClosure.js';
+
+// Import utils
+import { showLoading, hideLoading } from './utils.js';
 
 // NOVÉ: Import year managementu
 import { 
@@ -25,13 +28,17 @@ import {
 
 let currentUser = null;
 let transactions = []; 
+let allTransactionsLoaded = false; // Indikátor či sú načítané všetky transakcie
+let transactionLimit = 100; // Počiatočný limit pre načítanie transakcií
 let currentYear = 2025; // Aktívne zobrazený rok
 let activeYear = 2025;  // Skutočný aktívny rok používateľa
 let isViewingArchive = false; // Či sa pozeráme na archív
+let refreshDataTimeout = null; // Pre debouncing
+let currentRefreshId = 0; // Pre sledovanie requestov
 
 // --- 1. SETUP GLOBAL LISTENERS ---
 setupBudgetEvents(db, () => currentUser);
-setupTransactionEvents(db, () => currentUser, refreshData);
+setupTransactionEvents(db, () => currentUser, () => activeYear, refreshData);
 setupReportEvents(db, () => transactions);
 initSettings(db, () => currentUser);
 setupBackup(db, () => currentUser);
@@ -157,12 +164,21 @@ function updateYearSelector(active, archived) {
 
 // NOVÉ: Výber roka
 async function selectYear(year) {
+    // Debouncing - zrušiť predchádzajúci timeout
+    if (refreshDataTimeout) {
+        clearTimeout(refreshDataTimeout);
+    }
+    
     try {
         const result = await switchToYear(year, currentUser, db);
         
         if (result) {
             currentYear = result.year;
             isViewingArchive = result.isArchived;
+            
+            // Resetovať limit a indikátor pri prepnutí roka
+            transactionLimit = 100;
+            allTransactionsLoaded = false;
             
             // Zavrieť dropdown
             document.getElementById('yearDropdown').classList.remove('show');
@@ -177,11 +193,14 @@ async function selectYear(year) {
                 hideArchiveBanner();
             }
             
-            // Obnoviť dáta
-            await refreshData();
+            // Obnoviť dáta s debouncing (300ms)
+            refreshDataTimeout = setTimeout(() => {
+                refreshData();
+            }, 300);
         }
     } catch (error) {
         console.error("Chyba pri výbere roka:", error);
+        showToast("Chyba pri prepnutí roka", "danger");
     }
 }
 
@@ -317,7 +336,13 @@ async function refreshData() {
         return;
     }
     
-    console.log(`Sťahujem dáta z Firestore pre rok ${currentYear}...`);
+    // Vytvorenie unique ID pre tento request
+    const requestId = ++currentRefreshId;
+    
+    console.log(`Sťahujem dáta z Firestore pre rok ${currentYear}... (Request #${requestId})`);
+
+    // Zobrazenie loading stavu
+    showLoading();
 
     try {
         // 1. Načítať User Profile
@@ -335,26 +360,103 @@ async function refreshData() {
         // 2. Načítať Rozpočet (pre aktuálny rok)
         loadBudget(currentUser, db, currentYear);
 
-        // 3. Načítať Transakcie pre zobrazený rok (UPRAVENÉ)
+        // 3. Načítať Transakcie pre zobrazený rok s limitom (OPTIMALIZOVANÉ)
         const q = query(
             collection(db, "transactions"), 
             where("uid", "==", currentUser.uid),
-            where("year", "==", currentYear), // NOVÝ FILTER
-            orderBy("date", "desc")
+            where("year", "==", currentYear),
+            orderBy("date", "desc"),
+            limit(transactionLimit) // Limitovať počet načítaných transakcií
         );
         
         const querySnapshot = await getDocs(q);
+        
+        // Kontrola či nie je request zastaraný
+        if (requestId !== currentRefreshId) {
+            console.log(`Request #${requestId} je zastaraný, ignorujem.`);
+            hideLoading();
+            return;
+        }
+        
         transactions = [];
         querySnapshot.forEach((doc) => {
             transactions.push({ id: doc.id, ...doc.data() });
         });
         
+        // Indikátor či sú načítané všetky transakcie
+        allTransactionsLoaded = querySnapshot.size < transactionLimit;
+        
+        console.log(`Načítaných ${transactions.length} transakcií (limit: ${transactionLimit})`);
+        
         // Aktualizácia UI
         renderDashboard(transactions, config);
-        renderTransactions(transactions, db, refreshData, isViewingArchive); 
+        renderTransactions(transactions, db, refreshData, isViewingArchive);
+        
+        // Zobraziť tlačidlo "Načítať viac" ak existujú ďalšie transakcie
+        updateLoadMoreButton(); 
         
     } catch (error) { 
         console.error("Chyba pri osvieživovaní dát:", error); 
+    } finally {
+        // Skrytie loading stavu
+        hideLoading();
+    }
+}
+
+// Funkcia na aktualizáciu viditeľnosti tlačidla "Načítať viac"
+function updateLoadMoreButton() {
+    const loadMoreBtn = document.getElementById('loadMoreTransactionsBtn');
+    if (!loadMoreBtn) return;
+    
+    if (allTransactionsLoaded || transactions.length === 0) {
+        loadMoreBtn.style.display = 'none';
+    } else {
+        loadMoreBtn.style.display = 'block';
+        loadMoreBtn.querySelector('span').textContent = `Načítať viac transakcií (zobrazených ${transactions.length})`;
+    }
+}
+
+// Funkcia na načítanie všetkých transakcií
+async function loadAllTransactions() {
+    if (!currentUser || allTransactionsLoaded) return;
+    
+    const loadMoreBtn = document.getElementById('loadMoreTransactionsBtn');
+    if (loadMoreBtn) {
+        loadMoreBtn.disabled = true;
+        loadMoreBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Načítavam...';
+    }
+    
+    try {
+        // Načítať všetky transakcie bez limitu
+        const q = query(
+            collection(db, "transactions"), 
+            where("uid", "==", currentUser.uid),
+            where("year", "==", currentYear),
+            orderBy("date", "desc")
+        );
+        
+        const querySnapshot = await getDocs(q);
+        
+        transactions = [];
+        querySnapshot.forEach((doc) => {
+            transactions.push({ id: doc.id, ...doc.data() });
+        });
+        
+        allTransactionsLoaded = true;
+        
+        console.log(`Načítaných všetkých ${transactions.length} transakcií`);
+        
+        // Aktualizácia UI
+        renderTransactions(transactions, db, refreshData, isViewingArchive);
+        updateLoadMoreButton();
+        
+    } catch (error) {
+        console.error("Chyba pri načítavaní všetkých transakcií:", error);
+    } finally {
+        if (loadMoreBtn) {
+            loadMoreBtn.disabled = false;
+            loadMoreBtn.innerHTML = '<i class="fa-solid fa-chevron-down"></i> <span>Načítať viac</span>';
+        }
     }
 }
 
@@ -388,6 +490,11 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('.year-selector')) {
         document.getElementById('yearDropdown')?.classList.remove('show');
     }
+});
+
+// NOVÉ: Načítať viac transakcií
+document.getElementById('loadMoreTransactionsBtn')?.addEventListener('click', () => {
+    loadAllTransactions();
 });
 
 // Export pre použitie v iných moduloch

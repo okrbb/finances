@@ -1,6 +1,7 @@
 /* js/views/reports.js */
 import { formatDate, calculateTaxStats } from '../utils.js';
 import { currentYear } from '../app.js';
+import { showToast } from '../notifications.js';
 
 let chartInstance = null;
 let pieChartInstance = null;
@@ -50,7 +51,12 @@ export function setupReportEvents(db, getTransactionsCallback) {
     document.getElementById('exportExcelBtn').addEventListener('click', () => {
         const transactions = getTransactionsCallback();
         const filtered = filterTransactions(transactions);
-        if (filtered.length === 0) return alert("Žiadne dáta na export.");
+        if (filtered.length === 0) {
+            showToast("Žiadne dáta na export", "warning");
+            return;
+        }
+        
+        showToast("Pripravujem Excel export...", "info");
 
         const dataForExcel = filtered.map(tx => ({
             Dátum: tx.date ? tx.date.split('-').reverse().join('.') : '',
@@ -65,21 +71,30 @@ export function setupReportEvents(db, getTransactionsCallback) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Report");
         XLSX.writeFile(wb, `Report_${getFilters().dateFrom}.xlsx`);
+        
+        showToast("Excel export dokončený", "success");
     });
 
     // Export Štandardné PDF
     document.getElementById('exportPdfBtn').addEventListener('click', () => {
         const allTransactions = getTransactionsCallback();
         const filteredTx = filterTransactions(allTransactions);
-        if (filteredTx.length === 0) return alert("Žiadne dáta.");
-
+        if (filteredTx.length === 0) {
+            showToast("Žiadne dáta na export", "warning");
+            return;
+        }
+        
+        showToast("Pripravujem PDF report...", "info");
         exportMonthlyPdfReport(filteredTx);
+        showToast("PDF report dokončený", "success");
     });
 
     // Export PDF pre prenájom
     document.getElementById('exportTaxDraftBtn')?.addEventListener('click', () => {
         const transactions = getTransactionsCallback();
+        showToast("Pripravujem PDF prenájom...", "info");
         exportRentPdfReport(transactions);
+        showToast("PDF prenájom dokončený", "success");
     });
 }
 

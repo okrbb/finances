@@ -59,8 +59,15 @@ self.addEventListener('activate', (event) => {
 
 // 3. Fetch stratégia - Cache First, potom Network
 self.addEventListener('fetch', (event) => {
+    // Vynechať Firebase API volania
     if (event.request.url.includes('firestore.googleapis.com') || 
         event.request.url.includes('identitytoolkit.googleapis.com')) {
+        return;
+    }
+    
+    // Vynechať neštandardné URL schémy (chrome-extension, etc.)
+    const url = new URL(event.request.url);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         return;
     }
 
@@ -68,11 +75,15 @@ self.addEventListener('fetch', (event) => {
         // ZMENA: Skúsime najprv sieť, ak zlyhá (offline), použijeme cache
         fetch(event.request)
             .then((networkResponse) => {
-                return caches.open(CACHE_NAME).then((cache) => {
-                    // Uložíme čerstvú kópiu do cache pre nabudúce
-                    cache.put(event.request, networkResponse.clone());
-                    return networkResponse;
-                });
+                // Cachovať len GET requesty s OK status
+                if (event.request.method === 'GET' && networkResponse.status === 200) {
+                    return caches.open(CACHE_NAME).then((cache) => {
+                        // Uložíme čerstvú kópiu do cache pre nabudúce
+                        cache.put(event.request, networkResponse.clone());
+                        return networkResponse;
+                    });
+                }
+                return networkResponse;
             })
             .catch(() => {
                 // Ak sme offline, skúsime nájsť v cache

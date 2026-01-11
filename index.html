@@ -452,7 +452,10 @@
                                 </div>
                             </div>
 
-                            <div style="text-align: right;">
+                            <div style="text-align: right; display: flex; gap: 10px; justify-content: flex-end;">
+                                <button type="button" id="cancelEditBtn" class="btn btn-secondary" style="display: none; width: auto;">
+                                    <i class="fa-solid fa-times"></i> Zrušiť
+                                </button>
                                 <button type="submit" class="btn btn-primary" style="width: auto;">Pridať transakciu</button>
                             </div>
                         </form>
@@ -495,6 +498,13 @@
                                 <tbody id="transactionsList">
                                     </tbody>
                             </table>
+                            
+                            <!-- Tlačidlo na načítanie všetkých transakcií -->
+                            <div id="loadMoreTransactionsBtn" style="text-align: center; padding: 1rem; display: none;">
+                                <button class="btn btn-secondary" style="width: auto; min-width: 250px;">
+                                    <i class="fa-solid fa-chevron-down"></i> <span>Načítať viac transakcií</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -702,6 +712,30 @@
             <div class="modal-actions" style="margin-top: 1.5rem;">
                 <button id="btnCancelImport" class="btn btn-secondary">Zrušiť</button>
                 <button id="btnConfirmFinalImport" class="btn btn-primary">Importovať vybrané</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="loading-overlay" style="display: none; background: rgba(0, 0, 0, 0.5);">
+        <div class="glass-panel" style="max-width: 450px; width: 90%; padding: 2rem;">
+            <div style="text-align: center; margin-bottom: 1.5rem;">
+                <i class="fa-solid fa-circle-exclamation" style="font-size: 3rem; color: #f59e0b;"></i>
+            </div>
+            <h3 id="confirmTitle" style="text-align: center; margin-bottom: 1rem; font-size: 1.25rem;">Potvrdenie</h3>
+            <p id="confirmMessage" style="text-align: center; color: #64748b; margin-bottom: 2rem;"></p>
+            <div style="display: flex; gap: 1rem; justify-content: center;">
+                <button id="confirmCancelBtn" class="btn btn-secondary" style="width: 120px;">
+                    <i class="fa-solid fa-times"></i> Zrušiť
+                </button>
+                <button id="confirmOkBtn" class="btn btn-primary" style="width: 120px;">
+                    <i class="fa-solid fa-check"></i> Potvrdiť
+                </button>
             </div>
         </div>
     </div>

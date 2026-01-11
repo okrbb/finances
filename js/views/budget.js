@@ -2,6 +2,7 @@
 
 import { showToast } from '../notifications.js';
 import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { confirmAction } from '../utils.js';
 
 const MONTH_NAMES = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
 
@@ -50,15 +51,22 @@ export function setupBudgetEvents(db, getUserCallback) {
         });
 
         // Kliknutia na tlačidlá "Vymazať sekciu"
-        budgetContainer.addEventListener('click', (e) => {
+        budgetContainer.addEventListener('click', async (e) => {
             const clearBtn = e.target.closest('.btn-clear-section');
             if (clearBtn) {
                 e.preventDefault();
                 const targetId = clearBtn.dataset.target;
                 const container = document.getElementById(targetId);
-                if (container && confirm('Vymazať celú túto sekciu?')) {
-                    container.querySelectorAll('input').forEach(input => input.value = '');
-                    calculateBudgetTotals();
+                if (container) {
+                    const shouldClear = await confirmAction(
+                        'Naozaj chcete vymazať všetky hodnoty v tejto sekcii?',
+                        'Vymazať sekciu'
+                    );
+                    if (shouldClear) {
+                        container.querySelectorAll('input').forEach(input => input.value = '');
+                        calculateBudgetTotals();
+                        showToast("Sekcia bola vymazaná", "info");
+                    }
                 }
             }
         });
@@ -70,10 +78,26 @@ export function setupBudgetEvents(db, getUserCallback) {
 
 // --- 2. Logika Výpočtov a Načítania dát ---
 
+// Funkcia na nastavenie limitov month selectora
+function setMonthSelectorLimits(activeYear) {
+    const monthInput = document.getElementById('budgetMonthSelect');
+    if (!monthInput) return;
+    
+    // Obmedzenie na ±2 roky od aktívneho roka
+    const minYear = activeYear - 2;
+    const maxYear = activeYear + 2;
+    
+    monthInput.setAttribute('min', `${minYear}-01`);
+    monthInput.setAttribute('max', `${maxYear}-12`);
+}
+
 // UPRAVENÉ: Pridaný parameter year
 export function loadBudget(user, db, year = 2025) {
     currentBudgetYear = year; // Uložiť aktuálny rok
     const monthInput = document.getElementById('budgetMonthSelect');
+    
+    // Nastaviť limity month selectora
+    setMonthSelectorLimits(year);
     
     if (monthInput) {
         // Aktualizovať month selector na správny rok
@@ -128,7 +152,8 @@ function calculateBudgetTotals() {
 async function loadBudgetForMonth(user, db, yearMonth) {
     const allInputs = document.querySelectorAll('.budget-table input');
     allInputs.forEach(input => input.value = '');
-    document.getElementById('budgetStatus').textContent = '';
+    const statusElem = document.getElementById('budgetStatus');
+    statusElem.textContent = '';
 
     try {
         // Document ID vo formáte: uid_yearMonth (rok je ako pole v dokumente)
@@ -145,6 +170,7 @@ async function loadBudgetForMonth(user, db, yearMonth) {
         calculateBudgetTotals();
     } catch (error) {
         console.error("Chyba načítania rozpočtu:", error);
+        showToast("Nepodarilo sa načítať rozpočet. Skúste obnoviť stránku.", "danger");
     }
 }
 
@@ -173,8 +199,10 @@ async function saveAllBudget(user, db, yearMonth) {
         statusElem.className = 'text-success';
         setTimeout(() => { if(statusElem.textContent.includes('Uložené')) statusElem.textContent=''; }, 3000);
     } catch (error) {
-        statusElem.textContent = 'Chyba!';
+        console.error("Chyba ukladania rozpočtu:", error);
+        statusElem.textContent = 'Chyba ukladania!';
         statusElem.className = 'text-danger';
+        showToast(`Nepodarilo sa uložiť rozpočet: ${error.message}`, "danger");
     }
 }
 
