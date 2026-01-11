@@ -273,11 +273,37 @@ function showYearClosureBanner(year) {
 // Login / Logout Eventy
 const loginForm = document.getElementById('loginForm');
 if(loginForm) {
+    // Načítať uložené prihlasovací údaje pri načítaní stránky
+    const savedEmail = localStorage.getItem('rememberedEmail');
+    const savedPassword = localStorage.getItem('rememberedPassword');
+    const rememberCheckbox = document.getElementById('rememberMe');
+    
+    if (savedEmail && savedPassword) {
+        document.getElementById('loginEmail').value = savedEmail;
+        document.getElementById('loginPassword').value = savedPassword;
+        if (rememberCheckbox) rememberCheckbox.checked = true;
+    }
+    
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const email = document.getElementById('loginEmail').value;
+        const password = document.getElementById('loginPassword').value;
+        const remember = document.getElementById('rememberMe').checked;
+        
         try {
-            await signInWithEmailAndPassword(auth, document.getElementById('loginEmail').value, document.getElementById('loginPassword').value);
-        } catch (error) { alert('Chyba prihlásenia: ' + error.message); }
+            await signInWithEmailAndPassword(auth, email, password);
+            
+            // Uložiť alebo vymazať prihlasovací údaje podľa checkboxu
+            if (remember) {
+                localStorage.setItem('rememberedEmail', email);
+                localStorage.setItem('rememberedPassword', password);
+            } else {
+                localStorage.removeItem('rememberedEmail');
+                localStorage.removeItem('rememberedPassword');
+            }
+        } catch (error) { 
+            alert('Chyba prihlásenia: ' + error.message); 
+        }
     });
 }
 
