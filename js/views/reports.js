@@ -117,10 +117,10 @@ function getFilters() {
 function filterTransactions(transactions) {
     const { dateFrom, dateTo, typeFilter, selectedCategories } = getFilters();
     return transactions.filter(tx => {
-        const txDate = new Date(tx.date);
-        const from = dateFrom ? new Date(dateFrom) : new Date('1900-01-01');
-        const to = dateTo ? new Date(dateTo) : new Date('2100-01-01');
-        if (txDate < from || txDate > to) return false;
+        // Porovnávanie dátumov ako stringy (YYYY-MM-DD formát)
+        if (dateFrom && tx.date < dateFrom) return false;
+        if (dateTo && tx.date > dateTo) return false;
+        
         if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
         if (selectedCategories.length === 0) return false;
 
@@ -134,7 +134,7 @@ function filterTransactions(transactions) {
         if (selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
         if (selectedCategories.includes('ine') && cat.includes('iné')) match = true;
         return match;
-    }).sort((a, b) => new Date(a.date) - new Date(b.date));
+    }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function updateReportUI(allTransactions) {
