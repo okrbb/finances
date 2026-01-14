@@ -172,7 +172,7 @@ async function generateAutoTaxes(sourceTx, user, db, activeYear) {
     const tax = (sourceTx.amount - insurance - dds) * 0.19;
     
     const isWage = sourceTx.category === 'PD - mzda';
-    console.log(`📊 Automatické odvody pre ${isWage ? 'mzdu' : 'príspevek na dopravu'}:`);
+    console.log(`📊 Automatické odvody pre ${isWage ? 'mzdu' : 'príspevok na dopravu'}:`);
     console.log(`  Hrubá suma: ${sourceTx.amount.toFixed(2)} €`);
     console.log(`  Poistenie (13.4%): ${insurance.toFixed(2)} €`);
     if (isWage) console.log(`  DDS: ${dds.toFixed(2)} €`);
@@ -188,11 +188,11 @@ async function generateAutoTaxes(sourceTx, user, db, activeYear) {
         createdAt: new Date() 
     };
     
-    await addDoc(collection(db, "transactions"), { ...base, category: 'VD - poistenie', note: 'Auto odvody', amount: parseFloat(insurance.toFixed(2)) });
+    await addDoc(collection(db, "transactions"), { ...base, category: 'VD - poistenie', note: 'Automatické odvody (13,4%)', amount: parseFloat(insurance.toFixed(2)) });
     if (isWage) {
-        await addDoc(collection(db, "transactions"), { ...base, category: 'VD - DDS', note: 'Auto DDS', amount: dds });
+        await addDoc(collection(db, "transactions"), { ...base, category: 'VD - DDS', note: 'Automatický príspevok DDS', amount: dds });
     }
-    await addDoc(collection(db, "transactions"), { ...base, category: 'VD - preddavok na daň', note: 'Auto daň', amount: parseFloat(tax.toFixed(2)) });
+    await addDoc(collection(db, "transactions"), { ...base, category: 'VD - preddavok na daň', note: 'Automatická daň (bez DDS)', amount: parseFloat(tax.toFixed(2)) });
     
     console.log("✅ Automatické odvody vytvorené a uložené do databázy");
 }
