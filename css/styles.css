@@ -415,6 +415,7 @@ tr:hover td { background-color: #f8fafc; }
 /* Utilities */
 .text-success { color: var(--success) !important; }
 .text-danger { color: var(--danger) !important; }
+.text-warning { color: var(--warning) !important; }
 .flex-between { display: flex; justify-content: space-between; align-items: center; }
 .flex-center { display: flex; align-items: center; justify-content: center; }
 .gap-2 { gap: 0.5rem; }
