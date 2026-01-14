@@ -249,6 +249,16 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
         const formattedDate = tx.date ? tx.date.split('-').reverse().join('.') : '';
         const displayCategory = categoryMap[tx.category] || tx.category;
 
+        // Určenie farby sumy podľa typu a kategórie
+        let amountColor = 'text-red-500'; // Výdaje - červená
+        if (tx.type === 'Príjem') {
+            if (tx.category === 'PD - príspevok na dopravu') {
+                amountColor = 'text-amber-500'; // Príspevok na dopravu - oranžová
+            } else {
+                amountColor = 'text-green-600'; // Bežné príjmy - zelená
+            }
+        }
+
         const row = document.createElement('tr');
         row.className = "hover:bg-slate-50 transition-colors border-b border-slate-100";
         
@@ -260,8 +270,8 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
           <td class="px-4 py-3 text-xs">${tx.account}</td>
           <td class="px-4 py-3 font-medium text-slate-700">${displayCategory}</td> 
           <td class="px-4 py-3 text-slate-500 text-xs">${tx.note || ''}</td>
-          <td class="px-4 py-3 text-right text-green-600 font-bold">${tx.type === 'Príjem' ? tx.amount.toFixed(2) + ' €' : ''}</td>
-          <td class="px-4 py-3 text-right text-red-500 font-bold">${tx.type === 'Výdaj' ? tx.amount.toFixed(2) + ' €' : ''}</td>
+          <td class="px-4 py-3 text-right ${amountColor} font-bold">${tx.type === 'Príjem' ? tx.amount.toFixed(2) + ' €' : ''}</td>
+          <td class="px-4 py-3 text-right ${amountColor} font-bold">${tx.type === 'Výdaj' ? tx.amount.toFixed(2) + ' €' : ''}</td>
           <td class="px-4 py-3 text-center">
             ${isReadOnly ? 
                 '<span class="text-slate-400"><i class="fa-solid fa-lock"></i></span>' : 
