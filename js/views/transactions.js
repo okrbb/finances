@@ -168,27 +168,30 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
 
 async function generateAutoTaxes(sourceTx, user, db, activeYear) {
     const insurance = sourceTx.amount * 0.134;
-    const dds = 15.00;
-    const tax = (sourceTx.amount - insurance) * 0.19;
+    const dds = sourceTx.category === 'PD - mzda' ? 15.00 : 0; // DDS len z mzdy!
+    const tax = (sourceTx.amount - insurance - dds) * 0.19;
     
-    console.log("📊 Automatické odvody pre mzdu:");
-    console.log(`  Hrubá mzda: ${sourceTx.amount.toFixed(2)} €`);
+    const isWage = sourceTx.category === 'PD - mzda';
+    console.log(`📊 Automatické odvody pre ${isWage ? 'mzdu' : 'príspevek na dopravu'}:`);
+    console.log(`  Hrubá suma: ${sourceTx.amount.toFixed(2)} €`);
     console.log(`  Poistenie (13.4%): ${insurance.toFixed(2)} €`);
-    console.log(`  DDS: ${dds.toFixed(2)} €`);
-    console.log(`  Daň (19% z ${(sourceTx.amount - insurance).toFixed(2)}): ${tax.toFixed(2)} €`);
+    if (isWage) console.log(`  DDS: ${dds.toFixed(2)} €`);
+    console.log(`  Daň (19% z ${(sourceTx.amount - insurance - dds).toFixed(2)}): ${tax.toFixed(2)} €`);
     
     const base = { 
         uid: user.uid, 
         date: sourceTx.date, 
         type: 'Výdaj', 
         account: 'banka', 
-        year: activeYear,      // PRIDANÉ
-        archived: false,       // PRIDANÉ
+        year: activeYear,
+        archived: false,
         createdAt: new Date() 
     };
     
     await addDoc(collection(db, "transactions"), { ...base, category: 'VD - poistenie', note: 'Auto odvody', amount: parseFloat(insurance.toFixed(2)) });
-    await addDoc(collection(db, "transactions"), { ...base, category: 'VD - DDS', note: 'Auto DDS', amount: dds });
+    if (isWage) {
+        await addDoc(collection(db, "transactions"), { ...base, category: 'VD - DDS', note: 'Auto DDS', amount: dds });
+    }
     await addDoc(collection(db, "transactions"), { ...base, category: 'VD - preddavok na daň', note: 'Auto daň', amount: parseFloat(tax.toFixed(2)) });
     
     console.log("✅ Automatické odvody vytvorené a uložené do databázy");
