@@ -11,6 +11,7 @@ const categoryMap = {
     "VD - Telekom": "VD - internet",
     "VD - 4ka": "VD - TV",
     "PD - mzda": "Mzda",
+    "PD - príspevek na dopravu": "Príspevek na dopravu",
     "PD - prenájom": "Prenájom",
     "PN - výsluhový dôchodok": "Dôchodok",
     "VD - bytové družstvo": "Nájomné (BD)",
@@ -126,7 +127,7 @@ function filterTransactions(transactions) {
 
         const cat = (tx.category || '').toLowerCase();
         let match = false;
-        if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('dôchodok'))) match = true;
+        if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('príspevek na dopravu') || cat.includes('dôchodok'))) match = true;
         if (selectedCategories.includes('prenajom') && cat.includes('prenájom')) match = true;
         if (selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
         if (selectedCategories.includes('byvanie') && (cat.includes('bytové') || cat.includes('msú'))) match = true;

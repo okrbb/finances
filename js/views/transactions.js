@@ -138,10 +138,11 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
             
             showToast("Nová transakcia bola pridaná", "success");
             
-            // Špeciálna logika pre automatické odvody
-            if (txData.category === 'PD - mzda' && txData.type === 'Príjem') {
+            // Špeciálna logika pre automatické odvody (na mzdu a príspevek na dopravu)
+            if ((txData.category === 'PD - mzda' || txData.category === 'PD - príspevek na dopravu') && txData.type === 'Príjem') {
+                const incomeType = txData.category === 'PD - mzda' ? 'mzde' : 'príspevku na dopravu';
                 const shouldGenerate = await confirmAction(
-                    "Chcete vygenerovať automatické odvody a daň k tejto mzde?",
+                    `Chcete vygenerovať automatické odvody a daň k tejto ${incomeType}?`,
                     "Automatické odvody"
                 );
                 if (shouldGenerate) {
