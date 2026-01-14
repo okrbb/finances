@@ -253,7 +253,7 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
         let amountColor = 'text-red-500'; // Výdaje - červená
         if (tx.type === 'Príjem') {
             if (tx.category === 'PD - príspevok na dopravu') {
-                amountColor = 'text-amber-500'; // Príspevok na dopravu - oranžová
+                amountColor = 'text-amber-600'; // Príspevok na dopravu - oranžová
             } else {
                 amountColor = 'text-green-600'; // Bežné príjmy - zelená
             }
