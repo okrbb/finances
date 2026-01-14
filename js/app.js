@@ -371,7 +371,7 @@ async function refreshData() {
             where("uid", "==", currentUser.uid),
             where("year", "==", currentYear),
             orderBy("date", "desc"),
-            limit(transactionLimit) // Limitovať počet načítaných transakcií
+            limit(transactionLimit + 10) // Pridat 10% buffer aby sa nové transakcie nezostali neobjéhané
         );
         
         const querySnapshot = await getDocs(q);

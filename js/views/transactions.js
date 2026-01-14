@@ -153,7 +153,11 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
 
         // Reset formulára a refresh dát v UI
         e.target.reset();
-        refreshCallback(); 
+        
+        // Malá pauza aby sa Firebase stihol zapísať
+        setTimeout(() => {
+            refreshCallback();
+        }, 500);
 
     } catch (error) {
         console.error("Firestore error:", error);

@@ -4,6 +4,13 @@ import { updateElement, calculateTaxStats } from '../utils.js';
 export function renderDashboard(transactions, config) {
     const stats = calculateTaxStats(transactions, config);
     
+    // DEBUG: Zobraziť príjmy z prenájmu
+    console.log("🏠 Príjmy z prenájmu:", stats.rentIncome);
+    const rentTransactions = transactions.filter(tx => 
+        tx.type === 'Príjem' && (tx.category || '').toLowerCase().includes('prenájom')
+    );
+    console.log("📋 Transakcie z prenájmu:", rentTransactions);
+    
     updateElement('summaryIncome', stats.income);
     updateElement('summaryRent', stats.rentIncome);
     updateElement('summaryExpenses', stats.rentExpenses);
