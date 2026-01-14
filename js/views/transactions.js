@@ -145,7 +145,7 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
                     "Automatické odvody"
                 );
                 if (shouldGenerate) {
-                    await generateAutoTaxes(txData, user, db);
+                    await generateAutoTaxes(txData, user, db, activeYear);
                     showToast("Automatické odvody boli vygenerované", "success");
                 }
             }
@@ -165,7 +165,7 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
     }
 }
 
-async function generateAutoTaxes(sourceTx, user, db) {
+async function generateAutoTaxes(sourceTx, user, db, activeYear) {
     const insurance = sourceTx.amount * 0.134;
     const dds = 15.00;
     const tax = (sourceTx.amount - insurance) * 0.19;
