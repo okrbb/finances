@@ -394,3 +394,60 @@ export async function exportYearReport(year, user, db) {
         throw error;
     }
 }
+
+/**
+ * Odomknutie uzavretého roku - umožní ďalšie editácie
+ */
+export async function unlockYear(year, user, db) {
+    try {
+        console.log(`🔓 Odomykam rok ${year}...`);
+        
+        // 1. Aktualizovať user profil
+        const userDocRef = doc(db, "users", user.uid);
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        
+        let archivedYears = userData.archivedYears || [];
+        archivedYears = archivedYears.filter(y => y !== year);
+        
+        const yearClosureDates = userData.yearClosureDates || {};
+        delete yearClosureDates[year];
+        
+        await setDoc(userDocRef, {
+            ...userData,
+            activeYear: year,
+            archivedYears: archivedYears,
+            yearClosureDates: yearClosureDates
+        }, { merge: true });
+        
+        // 2. Označiť všetky transakcie ako ne-archived
+        const txQuery = query(
+            collection(db, "transactions"),
+            where("uid", "==", user.uid),
+            where("year", "==", year)
+        );
+        
+        const snapshot = await getDocs(txQuery);
+        const batch = writeBatch(db);
+        
+        snapshot.forEach(docSnap => {
+            batch.update(docSnap.ref, { archived: false });
+        });
+        
+        if (snapshot.size > 0) {
+            await batch.commit();
+        }
+        
+        console.log(`✅ Rok ${year} úspešne odomknutý`);
+        
+        return {
+            success: true,
+            year: year,
+            transactionsUnarchived: snapshot.size
+        };
+        
+    } catch (error) {
+        console.error("❌ Chyba pri odomykaní roka:", error);
+        throw error;
+    }
+}

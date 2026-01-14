@@ -3,8 +3,10 @@
 
 import { 
     validateYearClosure, 
-    closeYear, 
-    exportYearReport 
+    closeYear,
+    unlockYear,
+    exportYearReport,
+    getArchivedYears
 } from '../yearManager.js';
 import { showToast } from '../notifications.js';
 import { calculateTaxStats } from '../utils.js';
@@ -144,6 +146,50 @@ export function initYearClosure(db, getUserCallback, getActiveYearCallback) {
             }
         });
     }
+    
+    // Odomknutie roka
+    const btnUnlockYear = document.getElementById('btnUnlockYear');
+    if (btnUnlockYear) {
+        btnUnlockYear.addEventListener('click', async () => {
+            const user = getUserCallback();
+            
+            if (!user) return;
+            
+            try {
+                // Načítať archívované roky a vybrať prvý (najnedávnejší)
+                const archivedYears = await getArchivedYears(user, db);
+                if (archivedYears.length === 0) {
+                    showToast("Žiadny uzavretý rok na odomknutie", "warning");
+                    return;
+                }
+                
+                // Vzať posledný archívovaný rok (najnedávnejší)
+                const yearToUnlock = Math.max(...archivedYears);
+                
+                // Potvrdenie
+                const confirmed = await showConfirmDialog(yearToUnlock, 'unlock');
+                if (!confirmed) return;
+                
+                btnUnlockYear.disabled = true;
+                btnUnlockYear.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Odomykam...';
+                
+                const result = await unlockYear(yearToUnlock, user, db);
+                
+                if (result.success) {
+                    showToast(`Rok ${yearToUnlock} úspešne odomknutý. Odomknutých ${result.transactionsUnarchived} transakcií.`, "success");
+                    
+                    // Reload aplikácie
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                }
+            } catch (error) {
+                showToast("Chyba pri odomykaní: " + error.message, "danger");
+                btnUnlockYear.disabled = false;
+                btnUnlockYear.innerHTML = '<i class="fa-solid fa-lock-open"></i> Odomknúť rok';
+            }
+        });
+    }
 }
 
 /**
@@ -228,34 +274,59 @@ function renderValidationResults(results) {
 /**
  * Dialóg potvrdenia uzavretia
  */
-function showConfirmDialog(year) {
+function showConfirmDialog(year, action = 'close') {
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
+        
+        const isUnlock = action === 'unlock';
+        
+        const content = isUnlock ? {
+            title: 'Potvrdenie odomknutia roka',
+            message: `Naozaj chcete odomknúť rok <strong>${year}</strong>?`,
+            points: [
+                `Všetky transakcie za rok ${year} budú označené ako aktívne`,
+                `Budete môcť pokračovať v editácii roku ${year}`,
+                'Rok už nebude v archíve'
+            ],
+            warning: 'Po odomknutí budete môcť pokračovať v pridávaní položiek',
+            buttonText: 'Áno, odomknúť rok',
+            buttonIcon: 'fa-lock-open',
+            buttonClass: 'btn-warning'
+        } : {
+            title: 'Potvrdenie uzavretia roka',
+            message: `Naozaj chcete uzavrieť rok <strong>${year}</strong>?`,
+            points: [
+                `Všetky transakcie za rok ${year} budú označené ako archívne`,
+                `Vytvorí sa nový prázdny rok ${year + 1}`,
+                'Nastavenia sa prekopírujú'
+            ],
+            warning: 'Túto akciu NEMOŽNO vrátiť späť',
+            buttonText: 'Áno, uzavrieť rok',
+            buttonIcon: 'fa-lock',
+            buttonClass: 'btn-danger'
+        };
+        
+        const pointsHtml = content.points.map(point => `
+            <div class="confirm-point">
+                <i class="fa-solid fa-check-circle"></i>
+                <span>${point}</span>
+            </div>
+        `).join('');
+        
         modal.innerHTML = `
             <div class="modal-content confirm-dialog">
                 <div class="modal-header">
-                    <h2><i class="fa-solid fa-exclamation-triangle"></i> Potvrdenie uzavretia roka</h2>
+                    <h2><i class="fa-solid fa-exclamation-triangle"></i> ${content.title}</h2>
                 </div>
                 <div class="modal-body">
-                    <p>Naozaj chcete uzavrieť rok <strong>${year}</strong>?</p>
+                    <p>${content.message}</p>
                     
                     <div class="confirm-points">
-                        <div class="confirm-point">
-                            <i class="fa-solid fa-check-circle"></i>
-                            <span>Všetky transakcie za rok ${year} budú označené ako archívne</span>
-                        </div>
-                        <div class="confirm-point">
-                            <i class="fa-solid fa-check-circle"></i>
-                            <span>Vytvorí sa nový prázdny rok ${year + 1}</span>
-                        </div>
-                        <div class="confirm-point">
-                            <i class="fa-solid fa-check-circle"></i>
-                            <span>Nastavenia sa prekopírujú</span>
-                        </div>
-                        <div class="confirm-point warning">
-                            <i class="fa-solid fa-times-circle"></i>
-                            <span>Túto akciu NEMOŽNO vrátiť späť</span>
+                        ${pointsHtml}
+                        <div class="confirm-point ${isUnlock ? 'info' : 'warning'}">
+                            <i class="fa-solid ${isUnlock ? 'fa-info-circle' : 'fa-times-circle'}"></i>
+                            <span>${content.warning}</span>
                         </div>
                     </div>
                 </div>
@@ -263,8 +334,8 @@ function showConfirmDialog(year) {
                     <button id="btnCancelClose" class="btn btn-secondary">
                         <i class="fa-solid fa-times"></i> Zrušiť
                     </button>
-                    <button id="btnConfirmClose" class="btn btn-danger">
-                        <i class="fa-solid fa-lock"></i> Áno, uzavrieť rok
+                    <button id="btnConfirmClose" class="btn ${content.buttonClass}">
+                        <i class="fa-solid ${content.buttonIcon}"></i> ${content.buttonText}
                     </button>
                 </div>
             </div>
@@ -420,11 +491,13 @@ function updateYearLabels(year) {
     const yearToClose = document.getElementById('yearToClose');
     const nextYear = document.getElementById('nextYear');
     const yearToCloseBtn = document.getElementById('yearToCloseBtn');
+    const yearToUnlockBtn = document.getElementById('yearToUnlockBtn');
     
     if (closureYearLabel) closureYearLabel.textContent = year;
     if (yearToClose) yearToClose.textContent = year;
     if (nextYear) nextYear.textContent = year + 1;
     if (yearToCloseBtn) yearToCloseBtn.textContent = year;
+    if (yearToUnlockBtn) yearToUnlockBtn.textContent = year;
 }
 
 // Export funkcie pre použitie v app.js

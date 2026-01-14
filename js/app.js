@@ -227,7 +227,6 @@ function showArchiveBanner(year) {
         <div class="archive-banner-content">
             <i class="fa-solid fa-archive"></i>
             <span>ARCHÍVNY REŽIM - ROK ${year}</span>
-            <span class="archive-banner-note">Tento rok je uzavretý a iba na čítanie</span>
             <button id="btnBackToActive" class="btn-back-to-active">
                 <i class="fa-solid fa-arrow-left"></i> Späť na ${activeYear}
             </button>
