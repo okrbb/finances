@@ -1,5 +1,4 @@
 // js/utils.js
-// OPRAVENÉ: Vyčistený výpočet daňového základu (odstránené duplicity)
 
 // === LOADING STATES ===
 
@@ -26,7 +25,7 @@ export function hideLoading() {
 // === CONFIRMATION DIALOG ===
 
 /**
- * Zobrazí potvrdzujúce okno (async)
+ * Zobrazí potvrdzovacie okno (async)
  * @param {string} message - Správa na zobrazenie
  * @param {string} title - Titulok okna (voliteľný)
  * @returns {Promise<boolean>} - true ak používateľ potvrdí, false ak zruší
@@ -190,9 +189,7 @@ export function validateIBAN(iban) {
     return { valid: true, value: cleanIBAN };
 }
 
-// ========================================
-// ✅ OPRAVENÁ FUNKCIA: calculateTaxStats
-// ========================================
+// Tu je vaša funkcia calculateTaxStats (extrahovaná)
 export function calculateTaxStats(transactions, config = { rentExemption: 500, taxRate: 0.19 }) {
     let income = 0; 
     let rentIncome = 0; 
@@ -202,8 +199,8 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
     let insurance = 0;
     let taxAdvance = 0;
     let dds = 0;
+    let transportAllowance = 0; // Príspevok na dopravu (nezdaniteľný)
 
-    // 1. SUMOVANIE PRÍJMOV A VÝDAVKOV
     transactions.forEach(tx => {
         const amount = tx.amount || 0;
         const category = (tx.category || '').toLowerCase();
@@ -213,16 +210,13 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
                 rentIncome += amount;
             } else if (category.includes('dôchodok')) {
                 pension += amount;
+            } else if (category.includes('príspevok na dopravu')) {
+                transportAllowance += amount; // Nezdaniteľný príjem
             } else {
                 income += amount;
             }
         } else {
-            if (category.includes('bytové družstvo') || 
-                category.includes('telekom') || 
-                category.includes('4ka') || 
-                category.includes('zse') || 
-                category.includes('msú trnava') || 
-                category.includes('vd - iné')) {
+            if (category.includes('bytové družstvo') || category.includes('telekom') || category.includes('4ka') || category.includes('zse') || category.includes('msú trnava') || category.includes('vd - iné')) {
                 rentExpenses += amount;
             }
             if (category.includes('poistenie')) insurance += amount;
@@ -232,58 +226,40 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
         }
     });
 
-    // 2. VÝPOČET DANE Z PRENÁJMU
     const RENT_EXEMPTION = config.rentExemption;
     let taxableRentIncome = 0;    
     let deductibleRentExpenses = 0;
 
     if (rentIncome <= RENT_EXEMPTION) {
-        // Príjem pod oslobodením -> celý oslobodený
         taxableRentIncome = 0;
         deductibleRentExpenses = 0;
     } else {
-        // Príjem nad oslobodením -> odpočítame €500 a pomerne upravíme výdavky
         taxableRentIncome = rentIncome - RENT_EXEMPTION;
         const ratio = rentIncome > 0 ? (taxableRentIncome / rentIncome) : 0;
         deductibleRentExpenses = rentExpenses * ratio;
     }
 
     const taxBaseRent = taxableRentIncome - deductibleRentExpenses;
+    const taxBaseIncome = income; 
+    let taxBase = taxBaseRent + taxBaseIncome - dds;
+    if (taxBase < 0) taxBase = 0;
 
-    // 3. VÝPOČET DANE ZO MZDY/PRÍJMOV
-    // Daňový základ = Príjmy - Odvody - DDS
-    const taxBaseIncome = income - insurance - dds;
-    
-    // 4. CELKOVÝ DAŇOVÝ ZÁKLAD
-    // Pozn: Používateľ nemá nárok na nezdaniteľnú časť (výsluhový dôchodok)
-    let finalTaxBase = taxBaseIncome + taxBaseRent;
-    if (finalTaxBase < 0) finalTaxBase = 0;
-    
-    // 5. VÝPOČET FINÁLNEJ DANE
+    const partialTaxBaseWage = income - insurance; 
+    const finalTaxBase = partialTaxBaseWage + taxBaseRent - dds; 
     const taxToPay = (finalTaxBase * config.taxRate) - taxAdvance;
 
-    // 6. DAŇ ŠPECIFICKY Z PRENÁJMU
+    // Výpočet dane špecificky z prenájmu
     const rentTax = taxBaseRent * config.taxRate;
 
-    // 7. CELKOVÉ PRÍJMY A ZISK
-    const totalRealIncome = rentIncome + income + pension;
+    const totalRealIncome = rentIncome + income + pension + transportAllowance;
     const profitBeforeTax = totalRealIncome - expenses;
 
     return {
-        income, 
-        rentIncome, 
-        expenses, 
-        rentExpenses, 
-        pension, 
-        insurance, 
-        taxAdvance, 
-        dds,
-        taxBaseRent,           // Základ dane z prenájmu
-        taxBaseIncome,         // Základ dane zo mzdy (po odpočte odvodov a DDS)
-        taxBase: finalTaxBase, // Celkový daňový základ
-        profitBeforeTax,       // Zisk pred zdanením
-        taxToPay,              // Daň k úhrade (alebo preplatok ak záporná)
-        // Detail prenájmu izby
+        income, rentIncome, expenses, rentExpenses, pension, insurance, taxAdvance, dds,
+        transportAllowance, // Nový údaj pre zobrazenie
+        taxBaseRent, taxBaseIncome: partialTaxBaseWage, taxBase: finalTaxBase,
+        profitBeforeTax, taxToPay,
+        // Nové údaje pre detail prenájmu izby
         rentExemptionAmount: RENT_EXEMPTION,
         taxableRentIncome,
         deductibleRentExpenses,
