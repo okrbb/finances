@@ -370,8 +370,8 @@ async function refreshData() {
             collection(db, "transactions"), 
             where("uid", "==", currentUser.uid),
             where("year", "==", currentYear),
-            orderBy("date", "desc"),
-            limit(transactionLimit + 10) // Pridat 10% buffer aby sa nové transakcie nezostali neobjéhané
+            orderBy("date", "desc")
+            // REMOVE LIMIT pre aktuálny rok aby sa načítali všetky transakcie za rok
         );
         
         const querySnapshot = await getDocs(q);
@@ -389,9 +389,9 @@ async function refreshData() {
         });
         
         // Indikátor či sú načítané všetky transakcie
-        allTransactionsLoaded = querySnapshot.size < transactionLimit;
+        allTransactionsLoaded = true; // Vždy true keď nie je limit
         
-        console.log(`Načítaných ${transactions.length} transakcií (limit: ${transactionLimit})`);
+        console.log(`Načítaných ${transactions.length} transakcií (bez limitu)`);
         
         // Aktualizácia UI
         renderDashboard(transactions, config);
