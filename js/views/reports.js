@@ -1,17 +1,26 @@
 /* js/views/reports.js */
-import { formatDate, calculateTaxStats } from '../utils.js';
+import { formatDate, calculateTaxStats, formatCurrencySK } from '../utils.js';
 import { currentYear } from '../app.js';
 import { showToast } from '../notifications.js';
 
 let chartInstance = null;
 let pieChartInstance = null;
 
+function normalizeText(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+}
+
 // Mapovanie systémových kategórií na čitateľné názvy pre reporty
 const categoryMap = {
     "VD - Telekom": "VD - internet",
     "VD - 4ka": "VD - TV",
     "PD - mzda": "Mzda",
+    "PD - MV SR": "Mzda",
     "PD - príspevek na dopravu": "Príspevek na dopravu",
+    "PD - príspevok na dopravu": "Príspevok na dopravu",
     "PD - prenájom": "Prenájom",
     "PN - výsluhový dôchodok": "Dôchodok",
     "VD - bytové družstvo": "Nájomné (BD)",
@@ -26,11 +35,13 @@ const categoryMap = {
 export function setupReportEvents(db, getTransactionsCallback) {
     // Generovanie a filtre
     document.getElementById('generateReportBtn').addEventListener('click', () => {
+        renderReportSkeleton();
         refreshAll(getTransactionsCallback);
     });
 
     document.querySelectorAll('.report-cat-filter').forEach(cb => {
         cb.addEventListener('change', () => {
+            renderReportSkeleton();
             refreshAll(getTransactionsCallback);
         });
     });
@@ -125,15 +136,15 @@ function filterTransactions(transactions) {
         if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
         if (selectedCategories.length === 0) return false;
 
-        const cat = (tx.category || '').toLowerCase();
+        const cat = normalizeText(tx.category);
         let match = false;
-        if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('príspevek na dopravu') || cat.includes('dôchodok'))) match = true;
-        if (selectedCategories.includes('prenajom') && cat.includes('prenájom')) match = true;
+        if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('mv sr') || cat.includes('prispevok na dopravu') || cat.includes('prispevek na dopravu') || cat.includes('dochodok'))) match = true;
+        if (selectedCategories.includes('prenajom') && cat.includes('prenajom')) match = true;
         if (selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
-        if (selectedCategories.includes('byvanie') && (cat.includes('bytové') || cat.includes('msú'))) match = true;
+        if (selectedCategories.includes('byvanie') && (cat.includes('bytove') || cat.includes('msu'))) match = true;
         if (selectedCategories.includes('energie') && (cat.includes('zse') || cat.includes('elektrina'))) match = true;
         if (selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
-        if (selectedCategories.includes('ine') && cat.includes('iné')) match = true;
+        if (selectedCategories.includes('ine') && cat.includes('ine')) match = true;
         return match;
     }).sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -142,38 +153,83 @@ function updateReportUI(allTransactions) {
     const filtered = filterTransactions(allTransactions);
     let totalIncome = 0, totalExpense = 0;
     filtered.forEach(tx => tx.type === 'Príjem' ? totalIncome += tx.amount : totalExpense += tx.amount);
+    const balance = totalIncome - totalExpense;
+    const periodLabel = getReportPeriodLabel();
 
     let html = `
-        <div class="mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-            <h3 class="font-bold text-slate-700 mb-2">Súhrn</h3>
-            <div class="flex gap-6 flex-wrap">
-                <div class="text-green-600 font-bold">Príjmy: ${totalIncome.toFixed(2)} €</div>
-                <div class="text-red-500 font-bold">Výdavky: ${totalExpense.toFixed(2)} €</div>
-                <div class="text-slate-800 font-bold">Bilancia: ${(totalIncome - totalExpense).toFixed(2)} €</div>
+        <section class="report-summary">
+            <header class="report-summary-head">
+                <h3>Finančný súhrn</h3>
+                <span class="report-summary-period">${periodLabel}</span>
+            </header>
+            <div class="report-summary-grid">
+                <article class="report-kpi income">
+                    <span>Príjmy</span>
+                    <strong class="report-amount-strong">${formatCurrencySK(totalIncome)}</strong>
+                </article>
+                <article class="report-kpi expense">
+                    <span>Výdavky</span>
+                    <strong class="report-amount-strong">${formatCurrencySK(totalExpense)}</strong>
+                </article>
+                <article class="report-kpi balance ${balance >= 0 ? 'positive' : 'negative'}">
+                    <span>Bilancia</span>
+                    <strong class="report-amount-strong">${formatCurrencySK(balance)}</strong>
+                </article>
             </div>
-        </div>
-        <table class="w-full text-sm text-left mt-4">
-            <thead><tr class="bg-slate-100"><th>Dátum</th><th>Kategória</th><th>Popis</th><th class="text-right">Suma</th></tr></thead>
+        </section>`;
+
+    if (filtered.length === 0) {
+        html += `
+        <div class="table-empty-state report-empty-state">
+            <i class="fa-regular fa-chart-bar"></i>
+            <h4>V tomto filtri nie sú žiadne dáta</h4>
+            <p>Skús upraviť dátum alebo zapnúť ďalšie kategórie.</p>
+        </div>`;
+        document.getElementById('reportContent').innerHTML = html;
+        return;
+    }
+
+    html += `<div class="report-table-wrap">
+        <table class="report-table">
+            <thead>
+                <tr><th>Dátum</th><th>Kategória</th><th>Popis</th><th class="text-right">Typ</th><th class="text-right">Suma</th></tr>
+            </thead>
             <tbody>`;
 
-    if (filtered.length === 0) html += '<tr><td colspan="4" class="text-center py-4">Žiadne dáta</td></tr>';
-    else {
-        filtered.forEach(tx => {
-            html += `<tr>
-                <td class="py-2">${formatDate(tx.date)}</td>
-                <td>${categoryMap[tx.category] || tx.category}</td>
-                <td>${tx.note || '-'}</td>
-                <td class="text-right font-bold ${tx.type === 'Príjem' ? 'text-green-600' : 'text-red-500'}">${tx.amount.toFixed(2)} €</td>
-            </tr>`;
-        });
+    filtered.forEach(tx => {
+        const typeClass = tx.type === 'Príjem' ? 'income' : 'expense';
+        html += `<tr>
+            <td>${formatDate(tx.date)}</td>
+            <td><span class="report-category-pill">${categoryMap[tx.category] || tx.category}</span></td>
+            <td class="report-note-cell">${tx.note || '-'}</td>
+            <td class="text-right"><span class="report-type-pill ${typeClass}">${tx.type}</span></td>
+            <td class="text-right report-amount-strong ${typeClass}">${formatCurrencySK(tx.amount)}</td>
+        </tr>`;
+    });
+    document.getElementById('reportContent').innerHTML = html + '</tbody></table></div>';
+}
+
+function getReportPeriodLabel() {
+    const { dateFrom, dateTo } = getFilters();
+    if (dateFrom && dateTo) {
+        return `${formatDate(dateFrom)} - ${formatDate(dateTo)}`;
     }
-    document.getElementById('reportContent').innerHTML = html + '</tbody></table>';
+    if (dateFrom && !dateTo) {
+        return `Od ${formatDate(dateFrom)}`;
+    }
+    if (!dateFrom && dateTo) {
+        return `Do ${formatDate(dateTo)}`;
+    }
+    return `Celé obdobie ${currentYear}`;
 }
 
 // NOVÉ: Grafy s Drill-down funkcionalitou
 function renderCharts(allTransactions) {
     const filtered = filterTransactions(allTransactions);
     const monthlyData = {};
+    const darkMode = document.body.classList.contains('dark');
+    const axisColor = darkMode ? '#cbd5e1' : '#475569';
+    const gridColor = darkMode ? 'rgba(148, 163, 184, 0.25)' : 'rgba(148, 163, 184, 0.2)';
 
     filtered.forEach(tx => {
         const d = new Date(tx.date);
@@ -192,12 +248,75 @@ function renderCharts(allTransactions) {
         data: {
             labels: labels,
             datasets: [
-                { label: 'Príjmy', data: sortedKeys.map(k => monthlyData[k].income), backgroundColor: '#10b981' },
-                { label: 'Výdavky', data: sortedKeys.map(k => monthlyData[k].expense), backgroundColor: '#ef4444' }
+                {
+                    label: 'Príjmy',
+                    data: sortedKeys.map(k => monthlyData[k].income),
+                    backgroundColor: '#0f766e',
+                    borderRadius: 7,
+                    maxBarThickness: 26
+                },
+                {
+                    label: 'Výdavky',
+                    data: sortedKeys.map(k => monthlyData[k].expense),
+                    backgroundColor: '#c2410c',
+                    borderRadius: 7,
+                    maxBarThickness: 26
+                }
             ]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 2,
+            resizeDelay: 180,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            animation: {
+                duration: 220
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        boxWidth: 14,
+                        boxHeight: 14,
+                        color: axisColor,
+                        usePointStyle: true,
+                        pointStyle: 'rectRounded'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.94)' : 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#e2e8f0',
+                    padding: 10,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: (context) => `${context.dataset.label}: ${formatCurrencySK(context.raw)}`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        color: axisColor
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: axisColor,
+                        callback: (value) => formatCurrencySK(value, '').trim()
+                    },
+                    grid: {
+                        color: gridColor
+                    }
+                }
+            },
             onClick: (e, activeEls) => {
                 if (activeEls.length > 0) {
                     const index = activeEls[0].index;
@@ -216,10 +335,17 @@ function renderCharts(allTransactions) {
 function renderPieChart(filteredTransactions) {
     const expenses = filteredTransactions.filter(tx => tx.type === 'Výdaj');
     const catData = {};
+    const darkMode = document.body.classList.contains('dark');
+    const axisColor = darkMode ? '#cbd5e1' : '#475569';
+
     expenses.forEach(tx => {
         const cat = categoryMap[tx.category] || tx.category || 'Iné';
         catData[cat] = (catData[cat] || 0) + tx.amount;
     });
+
+    if (Object.keys(catData).length === 0) {
+        catData['Bez výdavkov'] = 1;
+    }
 
     if (pieChartInstance) pieChartInstance.destroy();
     const ctx = document.getElementById('categoryPieChart').getContext('2d');
@@ -229,10 +355,42 @@ function renderPieChart(filteredTransactions) {
             labels: Object.keys(catData),
             datasets: [{
                 data: Object.values(catData),
-                backgroundColor: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#64748b']
+                borderWidth: 0,
+                backgroundColor: ['#0f766e', '#c2410c', '#0891b2', '#84cc16', '#f59e0b', '#64748b', '#14b8a6']
             }]
         },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            aspectRatio: 1.7,
+            resizeDelay: 180,
+            cutout: '62%',
+            animation: {
+                duration: 220
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: axisColor,
+                        boxWidth: 12,
+                        boxHeight: 12,
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.94)' : 'rgba(15, 23, 42, 0.9)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#e2e8f0',
+                    padding: 10,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: (context) => `${context.label}: ${formatCurrencySK(context.raw)}`
+                    }
+                }
+            }
+        }
     });
 }
 
@@ -785,4 +943,16 @@ function exportRentPdfReport(allTransactions) {
     const year = sortedKeys.length > 0 ? sortedKeys[0].split('-')[0] : currentYear;
     const fileName = `Prenajom_${year}.pdf`;
     pdfMake.createPdf(docDefinition).download(fileName);
+}
+
+function renderReportSkeleton() {
+    const host = document.getElementById('reportContent');
+    if (!host) return;
+
+    host.innerHTML = `
+        <div class="skeleton-block" style="height: 92px;"></div>
+        <div class="skeleton-block skeleton-line"></div>
+        <div class="skeleton-block skeleton-line"></div>
+        <div class="skeleton-block skeleton-line"></div>
+    `;
 }

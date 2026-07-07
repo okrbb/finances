@@ -9,7 +9,7 @@ import {
     getArchivedYears
 } from '../yearManager.js';
 import { showToast } from '../notifications.js';
-import { calculateTaxStats } from '../utils.js';
+import { calculateTaxStats, formatCurrencySK } from '../utils.js';
 
 let validationResults = null;
 
@@ -253,16 +253,16 @@ function renderValidationResults(results) {
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Príjmy:</span>
-                    <span class="stat-value positive">${(results.stats.totalIncome || 0).toFixed(2)} €</span>
+                    <span class="stat-value positive">${formatCurrencySK(results.stats.totalIncome || 0)}</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Výdavky:</span>
-                    <span class="stat-value negative">${(results.stats.totalExpenses || 0).toFixed(2)} €</span>
+                    <span class="stat-value negative">${formatCurrencySK(results.stats.totalExpenses || 0)}</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Bilancia:</span>
                     <span class="stat-value ${results.stats.balance > 0 ? 'positive' : 'negative'}">
-                        ${(results.stats.balance || 0).toFixed(2)} €
+                        ${formatCurrencySK(results.stats.balance || 0)}
                     </span>
                 </div>
             </div>

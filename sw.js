@@ -1,11 +1,10 @@
-const CACHE_NAME = 'danova-evidencia-v6';
+const CACHE_NAME = 'danova-evidencia-v8';
 
 // Zoznam súborov na statické cachovanie
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './css/styles.css',
-    './css/DE.png',
     './css/favicon.ico',
     './css/icon-192.png',
     './css/icon-512.png',

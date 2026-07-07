@@ -1,6 +1,6 @@
 // js/notifications.js
 
-export function showToast(message, type = 'success') {
+export function showToast(message, type = 'success', options = {}) {
     // 1. Skontrolovať alebo vytvoriť kontajner
     let container = document.getElementById('toast-container');
     if (!container) {
@@ -22,11 +22,23 @@ export function showToast(message, type = 'success') {
         <span>${message}</span>
     `;
 
+    if (options.action && typeof options.action.onClick === 'function') {
+        const actionBtn = document.createElement('button');
+        actionBtn.type = 'button';
+        actionBtn.textContent = options.action.label || 'Akcia';
+        actionBtn.addEventListener('click', () => {
+            options.action.onClick();
+            toast.remove();
+        });
+        toast.appendChild(actionBtn);
+    }
+
     container.appendChild(toast);
 
     // 4. Automatické odstránenie po 4 sekundách
+    const duration = Number.isFinite(options.durationMs) ? options.durationMs : 4000;
     setTimeout(() => {
         toast.classList.add('fade-out');
         setTimeout(() => toast.remove(), 500);
-    }, 4000);
+    }, duration);
 }

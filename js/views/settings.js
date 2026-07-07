@@ -2,18 +2,43 @@
 
 import { showToast } from '../notifications.js';
 import { 
+    addDoc,
     collection, 
     query, 
     where, 
     getDocs, 
     doc, 
     getDoc, 
-    setDoc 
+    setDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { validateDIC, validateIBAN, validateAmount } from '../utils.js';
+import { validateDIC, validateIBAN, validateAmount, confirmAction } from '../utils.js';
 
 export function initSettings(db, getUserCallback) {
     const settingsForm = document.getElementById('settingsForm');
+    const dicInput = document.getElementById('settingsDIC');
+    const ibanInput = document.getElementById('settingsIBAN');
+    const taxRateInput = document.getElementById('configTaxRate');
+    const rentExInput = document.getElementById('configRentExemption');
+
+    dicInput?.addEventListener('blur', () => {
+        const result = validateDIC(dicInput.value);
+        dicInput.classList.toggle('is-invalid', !result.valid);
+    });
+
+    ibanInput?.addEventListener('blur', () => {
+        const result = validateIBAN(ibanInput.value);
+        ibanInput.classList.toggle('is-invalid', !result.valid);
+    });
+
+    taxRateInput?.addEventListener('blur', () => {
+        const rate = Number.parseFloat(taxRateInput.value);
+        taxRateInput.classList.toggle('is-invalid', Number.isNaN(rate) || rate < 0 || rate > 1);
+    });
+
+    rentExInput?.addEventListener('blur', () => {
+        const result = validateAmount(rentExInput.value);
+        rentExInput.classList.toggle('is-invalid', !result.valid);
+    });
 
     if (settingsForm) {
         settingsForm.addEventListener('submit', async (e) => {
@@ -60,7 +85,7 @@ export function initSettings(db, getUserCallback) {
 
             const userData = {
                 name: document.getElementById('settingsName').value,
-                dic: dicValue,
+                dic: dicValidation.value || dicValue,
                 address: document.getElementById('settingsAddress').value,
                 iban: ibanValidation.value || ibanValue,
                 year: document.getElementById('settingsYear').value,
@@ -90,8 +115,10 @@ export async function loadUserProfile(user, db) {
             
             const userNameEl = document.getElementById('userName');
             const userDicEl = document.getElementById('userDIC');
+            const userDicMirrorEl = document.getElementById('userDICMirror');
             if (userNameEl) userNameEl.textContent = data.name || user.email;
             if (userDicEl) userDicEl.textContent = data.dic ? `DIČ: ${data.dic}` : 'DIČ: -';
+            if (userDicMirrorEl) userDicMirrorEl.textContent = data.dic ? `DIČ: ${data.dic}` : 'DIČ: -';
             
             const userAddrEl = document.getElementById('userAddress');
             const userAccEl = document.getElementById('userAccount');
@@ -120,11 +147,14 @@ export async function loadUserProfile(user, db) {
     }
 }
 
-export function setupBackup(db, getUserCallback) {
-    const btn = document.getElementById('btnExportBackup');
-    if (!btn) return;
+export function setupBackup(db, getUserCallback, onRestoreComplete) {
+    const exportBtn = document.getElementById('btnExportBackup');
+    const importBtn = document.getElementById('btnImportBackup');
+    const importInput = document.getElementById('backupImportInput');
 
-    btn.addEventListener('click', async () => {
+    if (!exportBtn) return;
+
+    exportBtn.addEventListener('click', async () => {
         const user = getUserCallback();
         if (!user) return;
 
@@ -162,5 +192,208 @@ export function setupBackup(db, getUserCallback) {
         } catch (err) {
             showToast("Chyba zálohovania: " + err.message, "danger");
         }
+    });
+
+    if (!importBtn || !importInput) return;
+
+    importBtn.addEventListener('click', () => {
+        importInput.click();
+    });
+
+    importInput.addEventListener('change', async (event) => {
+        const user = getUserCallback();
+        if (!user) {
+            importInput.value = '';
+            return;
+        }
+
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        try {
+            setBackupWizardStep(1);
+            showBackupWizard(true);
+            showToast('Načítavam zálohu...', 'warning');
+            const text = await file.text();
+            const parsed = JSON.parse(text);
+
+            setBackupWizardStep(2);
+            const validation = validateBackupPayload(parsed);
+
+            if (!validation.valid) {
+                showToast(validation.error, 'danger');
+                showBackupWizard(false);
+                return;
+            }
+
+            setBackupWizardStep(3);
+            const shouldRestore = await confirmAction(
+                `Obnova pridá len chýbajúce dáta a duplicity preskočí. Pokračovať? (Transakcie: ${parsed.transactions.length}, Rozpočty: ${parsed.budgets.length})`,
+                'Obnova zo zálohy'
+            );
+
+            if (!shouldRestore) {
+                showToast('Obnova zo zálohy zrušená', 'info');
+                showBackupWizard(false);
+                return;
+            }
+
+            setBackupWizardStep(4);
+            await restoreBackupData(db, user.uid, parsed, ({ processed, total }) => {
+                if (processed > 0 && processed % 30 === 0) {
+                    showToast(`Obnova: spracované ${processed}/${total}`, 'info', { durationMs: 1200 });
+                }
+            });
+            showToast('Obnova (merge) zo zálohy bola úspešne dokončená', 'success');
+            if (typeof onRestoreComplete === 'function') {
+                await onRestoreComplete();
+            }
+        } catch (err) {
+            console.error('Chyba obnovy zálohy:', err);
+            showToast('Chyba obnovy: ' + err.message, 'danger');
+        } finally {
+            showBackupWizard(false);
+            importInput.value = '';
+        }
+    });
+}
+
+function validateBackupPayload(data) {
+    if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Súbor zálohy nemá platný formát JSON objektu' };
+    }
+
+    if (!Array.isArray(data.transactions) || !Array.isArray(data.budgets)) {
+        return { valid: false, error: 'Záloha musí obsahovať polia transactions a budgets' };
+    }
+
+    const invalidTx = data.transactions.find((tx) => {
+        if (!tx || typeof tx !== 'object') return true;
+        if (!tx.date || typeof tx.date !== 'string') return true;
+        if (!tx.type || (tx.type !== 'Príjem' && tx.type !== 'Výdaj')) return true;
+        if (tx.amount === undefined || tx.amount === null || Number.isNaN(Number(tx.amount))) return true;
+        return false;
+    });
+    if (invalidTx) {
+        return { valid: false, error: 'Záloha obsahuje neplatnú transakciu (chýba dátum/typ/suma)' };
+    }
+
+    const invalidBudget = data.budgets.find((budget) => !budget || typeof budget !== 'object');
+    if (invalidBudget) {
+        return { valid: false, error: 'Záloha obsahuje neplatný záznam rozpočtu' };
+    }
+
+    return { valid: true };
+}
+
+async function restoreBackupData(db, uid, backupData, onProgress) {
+    // Merge režim: nič nemažeme, len dopĺňame chýbajúce záznamy.
+    const txSnapshot = await getDocs(query(collection(db, 'transactions'), where('uid', '==', uid)));
+    const budgetSnapshot = await getDocs(query(collection(db, 'budgets'), where('uid', '==', uid)));
+
+    const existingTxSignatures = new Set();
+    txSnapshot.forEach((docSnap) => {
+        existingTxSignatures.add(buildTxSignature(uid, docSnap.data() || {}));
+    });
+
+    const existingBudgetIds = new Set(budgetSnapshot.docs.map((d) => d.id));
+
+    let addedTransactions = 0;
+    let skippedTransactions = 0;
+    let addedBudgets = 0;
+    let skippedBudgets = 0;
+    let processed = 0;
+    const total = backupData.transactions.length + backupData.budgets.length;
+
+    // 1) Obnoviť transakcie (len chýbajúce)
+    for (const tx of backupData.transactions) {
+        const { id, ...rest } = tx;
+
+        const signature = buildTxSignature(uid, rest);
+        if (existingTxSignatures.has(signature)) {
+            skippedTransactions++;
+            processed++;
+            onProgress?.({ processed, total });
+            continue;
+        }
+
+        await addDoc(collection(db, 'transactions'), {
+            ...rest,
+            uid,
+            amount: Number(rest.amount) || 0,
+            archived: Boolean(rest.archived)
+        });
+        existingTxSignatures.add(signature);
+        addedTransactions++;
+        processed++;
+        onProgress?.({ processed, total });
+    }
+
+    // 2) Obnoviť rozpočty (len chýbajúce dokumenty)
+    for (const budget of backupData.budgets) {
+        const { id, ...rest } = budget;
+
+        if (id && existingBudgetIds.has(id)) {
+            skippedBudgets++;
+            processed++;
+            onProgress?.({ processed, total });
+            continue;
+        }
+
+        if (id) {
+            await setDoc(doc(db, 'budgets', id), {
+                ...rest,
+                uid
+            }, { merge: true });
+            existingBudgetIds.add(id);
+            addedBudgets++;
+            processed++;
+            onProgress?.({ processed, total });
+            continue;
+        }
+
+        await addDoc(collection(db, 'budgets'), {
+            ...rest,
+            uid
+        });
+        addedBudgets++;
+        processed++;
+        onProgress?.({ processed, total });
+    }
+
+    showToast(
+        `Merge hotový: +${addedTransactions} transakcií, +${addedBudgets} rozpočtov, preskočené duplicity: ${skippedTransactions + skippedBudgets}`,
+        'info'
+    );
+}
+
+function buildTxSignature(uid, tx) {
+    const amount = Number.parseFloat(tx.amount || 0).toFixed(2);
+    return [
+        uid || '',
+        tx.date || '',
+        tx.type || '',
+        tx.category || '',
+        tx.account || '',
+        amount,
+        tx.note || ''
+    ].join('|');
+}
+
+function showBackupWizard(visible) {
+    const wizard = document.getElementById('backupWizardSteps');
+    if (wizard) {
+        wizard.style.display = visible ? 'flex' : 'none';
+    }
+}
+
+function setBackupWizardStep(step) {
+    const steps = document.querySelectorAll('#backupWizardSteps .wizard-step');
+    if (!steps.length) return;
+
+    steps.forEach((el, index) => {
+        const position = index + 1;
+        el.classList.toggle('active', position === step);
+        el.classList.toggle('done', position < step);
     });
 }

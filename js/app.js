@@ -2,7 +2,7 @@
 
 import { auth, db } from './config.js';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import { collection, query, where, orderBy, getDocs, doc, getDoc, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, limit, writeBatch } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import modulov
 import { setupImportEvents } from './views/import.js';
@@ -13,6 +13,7 @@ import { setupReportEvents } from './views/reports.js';
 import { initSettings, loadUserProfile, setupBackup } from './views/settings.js';
 import { setupSalaryImport } from './views/salaryImport.js';
 import { initYearClosure, updateYearLabels } from './views/yearClosure.js';
+import { showToast } from './notifications.js';
 
 // Import utils
 import { showLoading, hideLoading } from './utils.js';
@@ -36,12 +37,71 @@ let isViewingArchive = false; // Či sa pozeráme na archív
 let refreshDataTimeout = null; // Pre debouncing
 let currentRefreshId = 0; // Pre sledovanie requestov
 
+// --- LAYOUT HELPERS ---
+function closeMobileNav() {
+    document.body.classList.remove('nav-open');
+    const toggle = document.getElementById('mobileNavToggle');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+}
+
+function openMobileNav() {
+    document.body.classList.add('nav-open');
+    const toggle = document.getElementById('mobileNavToggle');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+}
+
+function initLayoutShell() {
+    const toggle = document.getElementById('mobileNavToggle');
+    const backdrop = document.getElementById('mobileNavBackdrop');
+
+    toggle?.addEventListener('click', () => {
+        const isOpen = document.body.classList.contains('nav-open');
+        if (isOpen) {
+            closeMobileNav();
+        } else {
+            openMobileNav();
+        }
+    });
+
+    backdrop?.addEventListener('click', () => {
+        closeMobileNav();
+    });
+
+    // Zrkadlenie mena používateľa do topbaru
+    const userNameNode = document.getElementById('userName');
+    const mirrorNode = document.getElementById('userNameMirror');
+    if (userNameNode && mirrorNode) {
+        mirrorNode.textContent = userNameNode.textContent || 'Používateľ';
+        const observer = new MutationObserver(() => {
+            mirrorNode.textContent = userNameNode.textContent || 'Používateľ';
+        });
+        observer.observe(userNameNode, { childList: true, subtree: true, characterData: true });
+    }
+}
+
+initLayoutShell();
+registerServiceWorker();
+
+function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) {
+        return;
+    }
+
+    window.addEventListener('load', async () => {
+        try {
+            await navigator.serviceWorker.register('./sw.js');
+        } catch (error) {
+            console.error('Registrácia Service Workera zlyhala:', error);
+        }
+    });
+}
+
 // --- 1. SETUP GLOBAL LISTENERS ---
 setupBudgetEvents(db, () => currentUser);
 setupTransactionEvents(db, () => currentUser, () => activeYear, refreshData);
 setupReportEvents(db, () => transactions);
 initSettings(db, () => currentUser);
-setupBackup(db, () => currentUser);
+setupBackup(db, () => currentUser, refreshData);
 initYearClosure(db, () => currentUser, () => activeYear);
 
 // --- AUTH LOGIC ---
@@ -53,6 +113,9 @@ onAuthStateChanged(auth, async (user) => {
         
         // NOVÉ: Migrácia a načítanie year systému
         await initializeYearSystem();
+
+        // Oprava historických importov: doplniť chýbajúci účet
+        await migrateMissingTransactionAccounts(user);
         
         setupImportEvents(db, currentUser, refreshData);
         setupSalaryImport(db, currentUser, refreshData);
@@ -63,6 +126,43 @@ onAuthStateChanged(auth, async (user) => {
         document.getElementById('mainApp').style.display = 'none';
     }
 });
+
+async function migrateMissingTransactionAccounts(user) {
+    if (!user?.uid) return;
+
+    try {
+        const q = query(
+            collection(db, 'transactions'),
+            where('uid', '==', user.uid)
+        );
+        const snapshot = await getDocs(q);
+
+        const docsToUpdate = [];
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data() || {};
+            const account = String(data.account || '').trim().toLowerCase();
+            if (!account || account === 'undefined') {
+                docsToUpdate.push(docSnap.ref);
+            }
+        });
+
+        if (docsToUpdate.length === 0) return;
+
+        const chunkSize = 450;
+        for (let i = 0; i < docsToUpdate.length; i += chunkSize) {
+            const chunk = docsToUpdate.slice(i, i + chunkSize);
+            const batch = writeBatch(db);
+            chunk.forEach((ref) => {
+                batch.update(ref, { account: 'banka' });
+            });
+            await batch.commit();
+        }
+
+        showToast(`Doplnený účet 'banka' v ${docsToUpdate.length} historických transakciách`, 'info');
+    } catch (error) {
+        console.error('Chyba migrácie účtu transakcií:', error);
+    }
+}
 
 // NOVÉ: Inicializácia year systému
 async function initializeYearSystem() {
@@ -119,6 +219,10 @@ function updateYearSelector(active, archived) {
     
     // Nastaviť aktuálny rok
     yearDisplay.textContent = currentYear;
+    const topbarYear = document.getElementById('topbarYear');
+    if (topbarYear) {
+        topbarYear.textContent = currentYear;
+    }
     
     // Vyčistiť dropdown
     yearDropdown.innerHTML = '';
@@ -188,6 +292,10 @@ async function selectYear(year) {
             
             // Aktualizovať display
             document.getElementById('currentYearDisplay').textContent = year;
+            const topbarYear = document.getElementById('topbarYear');
+            if (topbarYear) {
+                topbarYear.textContent = year;
+            }
             
             // Aktualizovať rok v Year Closure view
             updateYearLabels(year);
@@ -246,6 +354,12 @@ function hideArchiveBanner() {
     if (banner) {
         banner.style.display = 'none';
     }
+}
+
+// Fallback archívu: prepnutie na Reporty s toast info
+function showArchiveView() {
+    document.querySelector('[data-view="reports"]')?.click();
+    showToast('Archívny prehľad nájdete v reportoch po prepnutí roka', 'info');
 }
 
 // NOVÉ: Banner pre uzavretie roka
@@ -347,6 +461,7 @@ async function refreshData() {
     console.log(`Sťahujem dáta z Firestore pre rok ${currentYear}... (Request #${requestId})`);
 
     // Zobrazenie loading stavu
+    renderTransactionsSkeleton();
     showLoading();
 
     try {
@@ -406,6 +521,30 @@ async function refreshData() {
         // Skrytie loading stavu
         hideLoading();
     }
+}
+
+function renderTransactionsSkeleton() {
+    const tbody = document.getElementById('transactionsList');
+    const emptyState = document.getElementById('transactionsEmptyState');
+    if (!tbody) return;
+
+    if (emptyState) emptyState.style.display = 'none';
+
+    const skeletonRows = Array.from({ length: 6 }).map(() => (
+        `<tr>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+            <td><div class="skeleton-block" style="height: 14px;"></div></td>
+        </tr>`
+    )).join('');
+
+    tbody.innerHTML = skeletonRows;
 }
 
 // Funkcia na aktualizáciu viditeľnosti tlačidla "Načítať viac"
@@ -481,6 +620,13 @@ allNavButtons.forEach(btn => {
         if (targetView) {
             targetView.classList.add('active');
         }
+
+        const pageTitle = document.getElementById('pageTitle');
+        if (pageTitle) {
+            pageTitle.textContent = btn.textContent.trim();
+        }
+
+        closeMobileNav();
     });
 });
 
@@ -488,12 +634,14 @@ allNavButtons.forEach(btn => {
 document.getElementById('yearSelectorBtn')?.addEventListener('click', () => {
     const dropdown = document.getElementById('yearDropdown');
     dropdown.classList.toggle('show');
+    document.getElementById('yearSelectorBtn')?.setAttribute('aria-expanded', dropdown.classList.contains('show') ? 'true' : 'false');
 });
 
 // Zavrieť dropdown pri kliknutí mimo
 document.addEventListener('click', (e) => {
     if (!e.target.closest('.year-selector')) {
         document.getElementById('yearDropdown')?.classList.remove('show');
+        document.getElementById('yearSelectorBtn')?.setAttribute('aria-expanded', 'false');
     }
 });
 

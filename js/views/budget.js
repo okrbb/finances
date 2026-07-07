@@ -1,8 +1,8 @@
 // js/views/budget.js
 
 import { showToast } from '../notifications.js';
-import { doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { confirmAction } from '../utils.js';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { confirmAction, formatCurrencySK } from '../utils.js';
 
 const MONTH_NAMES = ['Január', 'Február', 'Marec', 'Apríl', 'Máj', 'Jún', 'Júl', 'August', 'September', 'Október', 'November', 'December'];
 
@@ -128,7 +128,7 @@ function calculateBudgetTotals() {
     const updateText = (id, val, colorClass = '') => {
         const el = document.getElementById(id);
         if (el) {
-            el.textContent = val.toFixed(2) + ' €';
+            el.textContent = formatCurrencySK(val);
             if (colorClass) el.className = colorClass;
         }
     };
@@ -143,7 +143,7 @@ function calculateBudgetTotals() {
     const balance = inc - totalExpenses;
     const balanceEl = document.getElementById('totalBudgetBalance');
     if (balanceEl) {
-        balanceEl.textContent = balance.toFixed(2) + ' €';
+        balanceEl.textContent = formatCurrencySK(balance);
         balanceEl.classList.toggle('text-danger', balance < 0);
         balanceEl.classList.toggle('text-success', balance >= 0);
     }
@@ -167,10 +167,62 @@ async function loadBudgetForMonth(user, db, yearMonth) {
                 if (field && data[field] !== undefined) input.value = data[field];
             });
         }
+
+        // Auto-vypocet prijmov z transakcii za mesiac (dochodok + prenajom)
+        await syncAutoIncomeFromTransactions(user, db, yearMonth);
+
         calculateBudgetTotals();
     } catch (error) {
         console.error("Chyba načítania rozpočtu:", error);
         showToast("Nepodarilo sa načítať rozpočet. Skúste obnoviť stránku.", "danger");
+    }
+}
+
+async function syncAutoIncomeFromTransactions(user, db, yearMonth) {
+    const [yearText] = yearMonth.split('-');
+    const year = parseInt(yearText, 10);
+
+    if (!year || Number.isNaN(year)) {
+        return;
+    }
+
+    const txQuery = query(
+        collection(db, 'transactions'),
+        where('uid', '==', user.uid),
+        where('year', '==', year)
+    );
+
+    const snapshot = await getDocs(txQuery);
+    let pensionIncome = 0;
+    let rentIncome = 0;
+
+    snapshot.forEach((txDoc) => {
+        const tx = txDoc.data();
+        if (tx.type !== 'Príjem' || !tx.date || !String(tx.date).startsWith(`${yearMonth}-`)) {
+            return;
+        }
+
+        const amount = parseFloat(tx.amount) || 0;
+        const category = (tx.category || '').toLowerCase();
+
+        if (category.includes('prenájom')) {
+            rentIncome += amount;
+        }
+
+        if (category.includes('dôchodok') || category.includes('dochodok')) {
+            pensionIncome += amount;
+        }
+    });
+
+    const pensionInput = document.querySelector('input[data-field="inc_pension"]');
+    const rentInput = document.querySelector('input[data-field="inc_rent"]');
+
+    if (pensionInput) {
+        pensionInput.value = pensionIncome.toFixed(2);
+    }
+
+    if (rentInput) {
+        rentInput.value = rentIncome.toFixed(2);
     }
 }
 

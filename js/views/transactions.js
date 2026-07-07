@@ -2,17 +2,26 @@
 
 import { showToast } from '../notifications.js';
 import { collection, addDoc, deleteDoc, updateDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-import { validateDate, validateAmount, confirmAction } from '../utils.js';
+import { validateDate, validateAmount, confirmAction, formatCurrencySK } from '../utils.js';
 
 let editingTransactionId = null;
+const transactionFilterState = {
+    type: 'all',
+    account: 'all',
+    period: 'all',
+    search: ''
+};
+const RECENT_ROW_MS = 20000;
 
 // --- 1. Setup Events (Volané raz) ---
 export function setupTransactionEvents(db, getUserCallback, getActiveYearCallback, refreshDataCallback) {
     const form = document.getElementById('transactionForm');
     const dateInput = document.getElementById('txDate');
+    const amountInput = document.getElementById('txAmount');
     const categorySelect = document.getElementById('txCategory');
     const noteInput = document.getElementById('txNote');
     const cancelBtn = document.getElementById('cancelEditBtn');
+    const requiredInputs = ['txDate', 'txAmount', 'txCategory'];
 
     const SK_MONTHS = ['január', 'február', 'marec', 'apríl', 'máj', 'jún', 'júl', 'august', 'september', 'október', 'november', 'december'];
     
@@ -65,6 +74,18 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
             const user = getUserCallback();
             if (user) await handleFormSubmit(e, user, db, getActiveYearCallback, refreshDataCallback);
         });
+
+        form.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && editingTransactionId && cancelBtn) {
+                event.preventDefault();
+                cancelBtn.click();
+            }
+
+            if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA') {
+                event.preventDefault();
+                form.requestSubmit();
+            }
+        });
     }
     
     // Cancel Edit Button
@@ -79,13 +100,44 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
 
     // Search Filter
     document.getElementById('searchTransactionInput')?.addEventListener('input', (e) => {
-        const val = e.target.value.toLowerCase();
-        const rows = document.querySelectorAll('#transactionsList tr');
-        rows.forEach(row => {
-            const text = row.innerText.toLowerCase();
-            row.style.display = text.includes(val) ? '' : 'none';
+        transactionFilterState.search = String(e.target.value || '').trim().toLowerCase();
+        applyTransactionFilters();
+    });
+
+    document.querySelectorAll('#transactionsQuickFilters .quick-filter-chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+            const group = chip.dataset.filterGroup;
+            const value = chip.dataset.filterValue;
+            if (!group || !value) return;
+
+            const current = transactionFilterState[group] || 'all';
+            transactionFilterState[group] = current === value ? 'all' : value;
+            syncQuickFilterUI();
+            applyTransactionFilters();
         });
     });
+
+    requiredInputs.forEach((fieldId) => {
+        const input = document.getElementById(fieldId);
+        if (!input) return;
+
+        input.addEventListener('input', () => {
+            validateField(input, getActiveYearCallback());
+        });
+
+        input.addEventListener('blur', () => {
+            validateField(input, getActiveYearCallback());
+        });
+    });
+
+    if (amountInput) {
+        amountInput.addEventListener('blur', () => {
+            const result = validateAmount(amountInput.value);
+            if (result.valid) {
+                amountInput.value = Number(result.value).toFixed(2);
+            }
+        });
+    }
 }
 
 async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallback) {
@@ -142,7 +194,7 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
             if ((txData.category === 'PD - mzda' || txData.category === 'PD - príspevok na dopravu') && txData.type === 'Príjem') {
                 const incomeType = txData.category === 'PD - mzda' ? 'mzde' : 'príspevku na dopravu';
                 const shouldGenerate = await confirmAction(
-                    `Chcete vygenerovať automatické odvody a daň k tejto ${incomeType}?`,
+                    `Chcete vygenerovať automatické odvody a daň k ${incomeType}?`,
                     "Automatické odvody"
                 );
                 if (shouldGenerate) {
@@ -154,11 +206,7 @@ async function handleFormSubmit(e, user, db, getActiveYearCallback, refreshCallb
 
         // Reset formulára a refresh dát v UI
         e.target.reset();
-        
-        // Malá pauza aby sa Firebase stihol zapísať
-        setTimeout(() => {
-            refreshCallback();
-        }, 500);
+        await refreshCallback();
 
     } catch (error) {
         console.error("Firestore error:", error);
@@ -204,6 +252,7 @@ async function generateAutoTaxes(sourceTx, user, db, activeYear) {
 // UPRAVENÉ: Pridaný parameter isReadOnly
 export function renderTransactions(transactions, db, refreshCallback, isReadOnly = false) {
     const tbody = document.getElementById('transactionsList');
+    const emptyState = document.getElementById('transactionsEmptyState');
     tbody.innerHTML = '';
 
     // Vytvoríme mapu kategórií z HTML Selectu
@@ -241,9 +290,11 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
     }
 
     if (transactions.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-slate-400">Žiadne transakcie</td></tr>`;
+        if (emptyState) emptyState.style.display = 'block';
         return;
     }
+
+    if (emptyState) emptyState.style.display = 'none';
 
     transactions.forEach((tx) => {
         const formattedDate = tx.date ? tx.date.split('-').reverse().join('.') : '';
@@ -260,7 +311,11 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
         }
 
         const row = document.createElement('tr');
-        row.className = "hover:bg-slate-50 transition-colors border-b border-slate-100";
+        row.className = `hover:bg-slate-50 transition-colors border-b border-slate-100 ${isRecentlyCreated(tx) ? 'row-new' : ''}`;
+        row.dataset.type = tx.type || '';
+        row.dataset.account = tx.account || '';
+        row.dataset.date = tx.date || '';
+        row.dataset.search = `${formattedDate} ${tx.number || ''} ${tx.type || ''} ${tx.account || ''} ${displayCategory || ''} ${tx.note || ''}`.toLowerCase();
         
         // UPRAVENÉ: Podmienené zobrazenie tlačidiel edit/delete
         row.innerHTML = `
@@ -270,8 +325,8 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
           <td class="px-4 py-3 text-xs">${tx.account}</td>
           <td class="px-4 py-3 font-medium text-slate-700">${displayCategory}</td> 
           <td class="px-4 py-3 text-slate-500 text-xs">${tx.note || ''}</td>
-          <td class="px-4 py-3 text-right ${amountColor} font-bold">${tx.type === 'Príjem' ? tx.amount.toFixed(2) + ' €' : ''}</td>
-          <td class="px-4 py-3 text-right ${amountColor} font-bold">${tx.type === 'Výdaj' ? tx.amount.toFixed(2) + ' €' : ''}</td>
+          <td class="px-4 py-3 text-right row-income">${tx.type === 'Príjem' ? formatCurrencySK(tx.amount) : ''}</td>
+          <td class="px-4 py-3 text-right row-expense">${tx.type === 'Výdaj' ? formatCurrencySK(tx.amount) : ''}</td>
           <td class="px-4 py-3 text-center">
             ${isReadOnly ? 
                 '<span class="text-slate-400"><i class="fa-solid fa-lock"></i></span>' : 
@@ -286,19 +341,31 @@ export function renderTransactions(transactions, db, refreshCallback, isReadOnly
             row.querySelector('.edit-btn').addEventListener('click', () => loadIntoForm(tx));
             row.querySelector('.delete-btn').addEventListener('click', async () => {
                 const shouldDelete = await confirmAction(
-                    `Naozaj chcete zmazať transakciu "${tx.note}" (${tx.amount.toFixed(2)} €)?`,
+                    `Naozaj chcete zmazať transakciu "${tx.note}" (${formatCurrencySK(tx.amount)})?`,
                     "Zmazať transakciu"
                 );
                 if (shouldDelete) {
                     await deleteDoc(doc(db, "transactions", tx.id));
-                    showToast("Transakcia bola zmazaná", "info");
-                    refreshCallback();
+                    showToast("Transakcia bola zmazaná", "info", {
+                        durationMs: 8000,
+                        action: {
+                            label: 'Obnoviť',
+                            onClick: async () => {
+                                await addDoc(collection(db, 'transactions'), buildTxForRestore(tx));
+                                await refreshCallback();
+                                showToast('Transakcia bola obnovená', 'success');
+                            }
+                        }
+                    });
+                    await refreshCallback();
                 }
             });
         }
 
         tbody.appendChild(row);
     });
+
+    applyTransactionFilters();
 }
 
 function loadIntoForm(tx) {
@@ -330,11 +397,90 @@ function resetSubmitButton() {
     const submitBtn = document.querySelector('#transactionForm button[type="submit"]');
     const cancelBtn = document.getElementById('cancelEditBtn');
     
-    submitBtn.textContent = "Pridať transakciu";
+    submitBtn.textContent = "Uložiť";
     submitBtn.classList.replace('bg-orange-500', 'bg-blue-600');
     
     // Skryť cancel tlačidlo
     if (cancelBtn) {
         cancelBtn.style.display = 'none';
     }
+}
+
+function buildTxForRestore(tx) {
+    return {
+        uid: tx.uid,
+        date: tx.date,
+        number: tx.number || '',
+        type: tx.type,
+        account: tx.account || 'banka',
+        category: tx.category,
+        note: tx.note || '',
+        amount: Number(tx.amount) || 0,
+        year: tx.year || Number.parseInt(String(tx.date || '').slice(0, 4), 10),
+        archived: Boolean(tx.archived),
+        createdAt: new Date()
+    };
+}
+
+function validateField(input, activeYear) {
+    if (!input) return;
+    const id = input.id;
+    let result = { valid: true };
+
+    if (id === 'txDate') result = validateDate(input.value, activeYear, false);
+    if (id === 'txAmount') result = validateAmount(input.value);
+    if (id === 'txCategory') result = { valid: Boolean(input.value) };
+
+    input.classList.toggle('is-invalid', !result.valid);
+}
+
+function syncQuickFilterUI() {
+    document.querySelectorAll('#transactionsQuickFilters .quick-filter-chip').forEach((chip) => {
+        const group = chip.dataset.filterGroup;
+        const value = chip.dataset.filterValue;
+        if (!group || !value) return;
+        chip.classList.toggle('active', (transactionFilterState[group] || 'all') === value);
+    });
+}
+
+function applyTransactionFilters() {
+    const rows = Array.from(document.querySelectorAll('#transactionsList tr'));
+    const emptyState = document.getElementById('transactionsEmptyState');
+    const now = new Date();
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    let visibleCount = 0;
+
+    rows.forEach((row) => {
+        const text = row.dataset.search || '';
+        const type = row.dataset.type || '';
+        const account = row.dataset.account || '';
+        const date = row.dataset.date || '';
+
+        const matchSearch = !transactionFilterState.search || text.includes(transactionFilterState.search);
+        const matchType = transactionFilterState.type === 'all' || type === transactionFilterState.type;
+        const matchAccount = transactionFilterState.account === 'all' || account === transactionFilterState.account;
+        const matchMonth = transactionFilterState.period === 'all' || date.startsWith(thisMonth);
+
+        const visible = matchSearch && matchType && matchAccount && matchMonth;
+        row.style.display = visible ? '' : 'none';
+        if (visible) visibleCount += 1;
+    });
+
+    if (emptyState) emptyState.style.display = visibleCount === 0 ? 'block' : 'none';
+}
+
+function isRecentlyCreated(tx) {
+    const dateValue = toDateValue(tx.createdAt);
+    if (!dateValue) return false;
+    return Date.now() - dateValue.getTime() <= RECENT_ROW_MS;
+}
+
+function toDateValue(value) {
+    if (!value) return null;
+    if (value instanceof Date) return value;
+    if (typeof value.toDate === 'function') return value.toDate();
+    if (typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
 }

@@ -22,6 +22,20 @@ export function hideLoading() {
     }
 }
 
+export function formatNumberSK(value, minFractionDigits = 2, maxFractionDigits = 2) {
+    const numericValue = Number(value);
+    const safeValue = Number.isFinite(numericValue) ? numericValue : 0;
+
+    return safeValue.toLocaleString('sk-SK', {
+        minimumFractionDigits: minFractionDigits,
+        maximumFractionDigits: maxFractionDigits
+    });
+}
+
+export function formatCurrencySK(value, currency = '€') {
+    return `${formatNumberSK(value)} ${currency}`;
+}
+
 // === CONFIRMATION DIALOG ===
 
 /**
@@ -79,7 +93,7 @@ export function confirmAction(message, title = "Potvrdenie") {
 export function updateElement(elementId, value, currency = '€') {
     const element = document.getElementById(elementId);
     if (element) {
-        element.textContent = (value || 0).toFixed(2) + ' ' + currency;
+        element.textContent = formatCurrencySK(value, currency);
     }
 }
 
@@ -157,15 +171,15 @@ export function validateDIC(dic) {
     if (!dic) {
         return { valid: true }; // DIČ je voliteľné
     }
-    
-    // SK + 10 číslic
-    const dicPattern = /^SK\d{10}$/;
-    
-    if (!dicPattern.test(dic)) {
-        return { valid: false, error: "DIČ musí byť vo formáte SK + 10 číslic (napr. SK1234567890)" };
+
+    const cleanDic = String(dic).replace(/\s/g, '');
+    const dicPattern = /^\d{10}$/;
+
+    if (!dicPattern.test(cleanDic)) {
+        return { valid: false, error: "DIČ musí mať presne 10 číslic (bez SK)" };
     }
-    
-    return { valid: true };
+
+    return { valid: true, value: cleanDic };
 }
 
 /**
@@ -240,16 +254,23 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
     }
 
     const taxBaseRent = taxableRentIncome - deductibleRentExpenses;
-    const taxBaseIncome = income; 
+    const taxBaseIncome = income + transportAllowance;
     let taxBase = taxBaseRent + taxBaseIncome - dds;
     if (taxBase < 0) taxBase = 0;
 
-    const partialTaxBaseWage = income - insurance; 
+    const partialTaxBaseWage = taxBaseIncome - insurance;
     const finalTaxBase = partialTaxBaseWage + taxBaseRent - dds; 
     const taxToPay = (finalTaxBase * config.taxRate) - taxAdvance;
 
     // Výpočet dane špecificky z prenájmu
     const rentTax = taxBaseRent * config.taxRate;
+
+    // Rozpad dane pre prehľadnejší dashboard
+    const employmentTaxBase = Math.max(0, partialTaxBaseWage - dds);
+    const employmentTax = employmentTaxBase * config.taxRate;
+    const grossTax = Math.max(0, finalTaxBase) * config.taxRate;
+    const effectiveTaxRate = taxBase > 0 ? (grossTax / taxBase) * 100 : 0;
+    const monthlyTaxReserve = Math.max(0, taxToPay) / 12;
 
     const totalRealIncome = rentIncome + income + pension + transportAllowance;
     const profitBeforeTax = totalRealIncome - expenses;
@@ -263,6 +284,9 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
         rentExemptionAmount: RENT_EXEMPTION,
         taxableRentIncome,
         deductibleRentExpenses,
-        rentTax
+        rentTax,
+        employmentTax,
+        effectiveTaxRate,
+        monthlyTaxReserve
     };
 }
