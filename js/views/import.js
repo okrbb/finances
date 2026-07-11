@@ -10,6 +10,20 @@ let lastImportedDocIds = [];
 
 const MERGED_HOUSING_AMOUNT = 40.73;
 
+function buildRelevantYears(entries) {
+    const years = new Set();
+    entries.forEach((ntry) => {
+        const date = ntry.getElementsByTagName("BookgDt")[0]?.getElementsByTagName("Dt")[0]?.textContent;
+        const year = Number.parseInt(String(date || '').slice(0, 4), 10);
+        if (Number.isFinite(year)) {
+            years.add(year);
+            years.add(year - 1);
+            years.add(year + 1);
+        }
+    });
+    return Array.from(years).filter((year) => Number.isFinite(year)).sort((a, b) => a - b);
+}
+
 function classifyImportedTransaction(indicator, counterParty, narrative, unstructured, amount, customRules = []) {
     let category = indicator === "CRDT" ? "PD - iné" : "VD - iné";
     if (indicator !== "DBIT") return category;
@@ -322,8 +336,21 @@ export function setupImportEvents(db, user, refreshCallback) {
             const existingRefs = new Set();
             const existingSignatures = new Set();
             const existingTransactions = [];
-            const q = query(collection(db, "transactions"), where("uid", "==", user.uid));
-            const querySnapshot = await getDocs(q);
+            const relevantYears = buildRelevantYears(entries);
+            let querySnapshot = null;
+
+            if (relevantYears.length > 0 && relevantYears.length <= 10) {
+                const q = query(
+                    collection(db, "transactions"),
+                    where("uid", "==", user.uid),
+                    where("year", "in", relevantYears)
+                );
+                querySnapshot = await getDocs(q);
+            } else {
+                const q = query(collection(db, "transactions"), where("uid", "==", user.uid));
+                querySnapshot = await getDocs(q);
+            }
+
             querySnapshot.forEach((docSnap) => {
                 const data = docSnap.data() || {};
                 if (data.bankRef) existingRefs.add(data.bankRef);

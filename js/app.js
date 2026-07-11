@@ -2,7 +2,7 @@
 
 import { auth, db } from './config.js';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-import { collection, query, where, orderBy, getDocs, doc, getDoc, limit, writeBatch } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { collection, query, where, orderBy, getDocs, doc, getDoc, limit, writeBatch, startAfter } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
 // Import modulov
 import { setupImportEvents } from './views/import.js';
@@ -28,14 +28,18 @@ import {
 } from './yearManager.js';
 
 let currentUser = null;
-let transactions = []; 
-let allTransactionsLoaded = false; // Indikátor či sú načítané všetky transakcie
-let transactionLimit = 100; // Počiatočný limit pre načítanie transakcií
+let transactions = []; // Kompletné dáta pre dashboard/reporty
+let tableTransactions = []; // Dáta pre tabuľku transakcií (stránkované)
+let allTransactionsLoaded = false;
+const TRANSACTION_QUERY_PAGE_SIZE = 150;
+let transactionCursor = null;
+let analyticsLoadingPromise = null;
 let currentYear = 2025; // Aktívne zobrazený rok
 let activeYear = 2025;  // Skutočný aktívny rok používateľa
 let isViewingArchive = false; // Či sa pozeráme na archív
 let refreshDataTimeout = null; // Pre debouncing
 let currentRefreshId = 0; // Pre sledovanie requestov
+let latestDashboardConfig = { rentExemption: 500, taxRate: 0.19 };
 
 // --- LAYOUT HELPERS ---
 function closeMobileNav() {
@@ -106,9 +110,47 @@ function registerServiceWorker() {
         return;
     }
 
+    let isRefreshing = false;
+    let updatePromptShown = false;
+
+    const promptForServiceWorkerUpdate = (worker) => {
+        if (!worker || updatePromptShown) return;
+        updatePromptShown = true;
+
+        showToast('Je dostupna nova verzia aplikacie.', 'info');
+        const confirmed = window.confirm('Je dostupna nova verzia aplikacie. Chcete ju teraz nainstalovat?');
+
+        if (confirmed) {
+            worker.postMessage({ type: 'SKIP_WAITING' });
+        } else {
+            updatePromptShown = false;
+        }
+    };
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        window.location.reload();
+    });
+
     window.addEventListener('load', async () => {
         try {
-            await navigator.serviceWorker.register('./sw.js');
+            const registration = await navigator.serviceWorker.register('./sw.js');
+
+            if (registration.waiting) {
+                promptForServiceWorkerUpdate(registration.waiting);
+            }
+
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                if (!newWorker) return;
+
+                newWorker.addEventListener('statechange', () => {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        promptForServiceWorkerUpdate(newWorker);
+                    }
+                });
+            });
         } catch (error) {
             console.error('Registrácia Service Workera zlyhala:', error);
         }
@@ -303,8 +345,11 @@ async function selectYear(year) {
             currentYear = result.year;
             isViewingArchive = result.isArchived;
             
-            // Resetovať limit a indikátor pri prepnutí roka
-            transactionLimit = 100;
+            // Resetovať stránkovanie transakcií pri prepnutí roka
+            transactionCursor = null;
+            tableTransactions = [];
+            transactions = [];
+            analyticsLoadingPromise = null;
             allTransactionsLoaded = false;
             
             // Zavrieť dropdown
@@ -458,7 +503,16 @@ if(loginForm) {
             // Vymazať uložené heslo (ak tam náhodou bolo z predošlej verzie)
             localStorage.removeItem('rememberedPassword');
         } catch (error) { 
-            alert('Chyba prihlásenia: ' + error.message); 
+            const code = error?.code || '';
+            let hint = '';
+
+            if (code === 'auth/unauthorized-domain') {
+                hint = '\nPovolená doména vo Firebase chýba. Pridaj localhost do Firebase Auth > Settings > Authorized domains.';
+            } else if (code === 'auth/network-request-failed') {
+                hint = '\nSkontroluj internetové pripojenie a firewall/proxy.';
+            }
+
+            alert('Chyba prihlásenia: ' + (error?.message || 'Neznáma chyba') + '\nKód: ' + (code || 'n/a') + hint); 
         }
     });
 }
@@ -500,15 +554,15 @@ async function refreshData() {
         // 2. Načítať Rozpočet (pre aktuálny rok)
         loadBudget(currentUser, db, currentYear);
 
-        // 3. Načítať Transakcie pre zobrazený rok s limitom (OPTIMALIZOVANÉ)
-        const q = query(
-            collection(db, "transactions"), 
-            where("uid", "==", currentUser.uid),
-            where("year", "==", currentYear),
-            orderBy("date", "desc")
-            // REMOVE LIMIT pre aktuálny rok aby sa načítali všetky transakcie za rok
-        );
-        const querySnapshot = await getDocs(q);
+        latestDashboardConfig = config;
+
+        transactionCursor = null;
+        tableTransactions = [];
+        allTransactionsLoaded = false;
+        analyticsLoadingPromise = null;
+
+        // 3. Načítať prvú stránku transakcií pre rýchly render tabuľky
+        await loadNextTransactionsPage({ reset: true, requestId });
         
         // Kontrola či nie je request zastaraný
         if (requestId !== currentRefreshId) {
@@ -517,19 +571,14 @@ async function refreshData() {
             return;
         }
         
-        transactions = [];
-        querySnapshot.forEach((doc) => {
-            transactions.push({ id: doc.id, ...doc.data() });
-        });
-        
-        // Indikátor či sú načítané všetky transakcie
-        allTransactionsLoaded = true; // Vždy true keď nie je limit
-        
-        console.log(`Načítaných ${transactions.length} transakcií (bez limitu)`);
-        
-        // Aktualizácia UI
-        renderDashboard(transactions, config);
-        renderTransactions(transactions, db, refreshData, isViewingArchive);
+        console.log(`Načítaných ${tableTransactions.length} transakcií (1. stránka)`);
+
+        // Rýchly render dashboardu z prvej stránky, potom presný prepočet z full analytics.
+        renderDashboard(tableTransactions, config);
+        renderTransactions(tableTransactions, db, refreshData, isViewingArchive);
+
+        // Asynchrónne načítanie plných dát pre presné výpočty dashboardu/reportov.
+        analyticsLoadingPromise = loadAnalyticsTransactions(requestId, config);
         
         // Zobraziť tlačidlo "Načítať viac" ak existujú ďalšie transakcie
         updateLoadMoreButton(); 
@@ -539,6 +588,73 @@ async function refreshData() {
     } finally {
         // Skrytie loading stavu
         hideLoading();
+    }
+}
+
+async function loadNextTransactionsPage({ reset = false, requestId } = {}) {
+    if (!currentUser) return;
+    if (!reset && allTransactionsLoaded) return;
+
+    const constraints = [
+        where("uid", "==", currentUser.uid),
+        where("year", "==", currentYear),
+        orderBy("date", "desc"),
+        limit(TRANSACTION_QUERY_PAGE_SIZE)
+    ];
+
+    if (!reset && transactionCursor) {
+        constraints.push(startAfter(transactionCursor));
+    }
+
+    const q = query(collection(db, "transactions"), ...constraints);
+    const querySnapshot = await getDocs(q);
+
+    if (typeof requestId === 'number' && requestId !== currentRefreshId) {
+        return;
+    }
+
+    const pageItems = [];
+    querySnapshot.forEach((docSnap) => {
+        pageItems.push({ id: docSnap.id, ...docSnap.data() });
+    });
+
+    if (reset) {
+        tableTransactions = pageItems;
+    } else {
+        tableTransactions = tableTransactions.concat(pageItems);
+    }
+
+    if (!querySnapshot.empty) {
+        transactionCursor = querySnapshot.docs[querySnapshot.docs.length - 1];
+    }
+
+    allTransactionsLoaded = pageItems.length < TRANSACTION_QUERY_PAGE_SIZE;
+}
+
+async function loadAnalyticsTransactions(requestId, config) {
+    try {
+        const q = query(
+            collection(db, "transactions"),
+            where("uid", "==", currentUser.uid),
+            where("year", "==", currentYear),
+            orderBy("date", "desc")
+        );
+
+        const querySnapshot = await getDocs(q);
+
+        if (requestId !== currentRefreshId) {
+            return;
+        }
+
+        const analyticsItems = [];
+        querySnapshot.forEach((docSnap) => {
+            analyticsItems.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        transactions = analyticsItems;
+        renderDashboard(transactions, config);
+    } catch (error) {
+        console.error("Chyba pri načítaní analytických dát:", error);
     }
 }
 
@@ -571,15 +687,15 @@ function updateLoadMoreButton() {
     const loadMoreBtn = document.getElementById('loadMoreTransactionsBtn');
     if (!loadMoreBtn) return;
     
-    if (allTransactionsLoaded || transactions.length === 0) {
+    if (tableTransactions.length === 0 || allTransactionsLoaded) {
         loadMoreBtn.style.display = 'none';
     } else {
         loadMoreBtn.style.display = 'block';
-        loadMoreBtn.querySelector('span').textContent = `Načítať viac transakcií (zobrazených ${transactions.length})`;
+        loadMoreBtn.querySelector('span').textContent = `Načítať viac transakcií (zobrazených ${tableTransactions.length}+)`;
     }
 }
 
-// Funkcia na načítanie všetkých transakcií
+// Funkcia na načítanie ďalšej stránky transakcií do tabuľky
 async function loadAllTransactions() {
     if (!currentUser || allTransactionsLoaded) return;
     
@@ -590,27 +706,8 @@ async function loadAllTransactions() {
     }
     
     try {
-        // Načítať všetky transakcie bez limitu
-        const q = query(
-            collection(db, "transactions"), 
-            where("uid", "==", currentUser.uid),
-            where("year", "==", currentYear),
-            orderBy("date", "desc")
-        );
-        
-        const querySnapshot = await getDocs(q);
-        
-        transactions = [];
-        querySnapshot.forEach((doc) => {
-            transactions.push({ id: doc.id, ...doc.data() });
-        });
-        
-        allTransactionsLoaded = true;
-        
-        console.log(`Načítaných všetkých ${transactions.length} transakcií`);
-        
-        // Aktualizácia UI
-        renderTransactions(transactions, db, refreshData, isViewingArchive);
+        await loadNextTransactionsPage();
+        renderTransactions(tableTransactions, db, refreshData, isViewingArchive);
         updateLoadMoreButton();
         
     } catch (error) {
@@ -667,6 +764,18 @@ document.addEventListener('click', (e) => {
 // NOVÉ: Načítať viac transakcií
 document.getElementById('loadMoreTransactionsBtn')?.addEventListener('click', () => {
     loadAllTransactions();
+});
+
+document.querySelector('[data-view="dashboard"]')?.addEventListener('click', async () => {
+    if (transactions.length > 0 || analyticsLoadingPromise) return;
+    analyticsLoadingPromise = loadAnalyticsTransactions(currentRefreshId, latestDashboardConfig);
+    await analyticsLoadingPromise;
+});
+
+document.querySelector('[data-view="reports"]')?.addEventListener('click', async () => {
+    if (transactions.length > 0 || analyticsLoadingPromise) return;
+    analyticsLoadingPromise = loadAnalyticsTransactions(currentRefreshId, latestDashboardConfig);
+    await analyticsLoadingPromise;
 });
 
 // Export pre použitie v iných moduloch

@@ -1,7 +1,7 @@
 // js/views/transactions.js
 
 import { showToast } from '../notifications.js';
-import { collection, addDoc, deleteDoc, updateDoc, doc, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { collection, addDoc, deleteDoc, updateDoc, doc, getDocs, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { validateDate, validateAmount, confirmAction, formatCurrencySK } from '../utils.js';
 import { logAuditEvent } from '../audit.js';
 
@@ -24,6 +24,16 @@ const transactionSortState = {
 const RECENT_ROW_MS = 20000;
 const TX_DRAFT_KEY = 'finances_tx_draft';
 const TX_OFFLINE_QUEUE_KEY = 'finances_tx_offline_queue';
+const BATCH_CHUNK_SIZE = 450;
+
+async function runBatched(db, refs, operation) {
+    for (let i = 0; i < refs.length; i += BATCH_CHUNK_SIZE) {
+        const chunk = refs.slice(i, i + BATCH_CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach((item) => operation(batch, item));
+        await batch.commit();
+    }
+}
 
 // --- 1. Setup Events (Volané raz) ---
 export function setupTransactionEvents(db, getUserCallback, getActiveYearCallback, refreshDataCallback) {
@@ -234,11 +244,15 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
         if (!user || !value || selectedTransactionIds.size === 0) return;
 
         const previousValues = [];
+        const refsToUpdate = [];
         for (const id of selectedTransactionIds) {
             const original = lastRenderedTransactions.find((tx) => tx.id === id);
             if (original) previousValues.push({ id, category: original.category });
-            await updateDoc(doc(db, 'transactions', id), { category: value });
+            refsToUpdate.push({ ref: doc(db, 'transactions', id), category: value });
         }
+        await runBatched(db, refsToUpdate, (batch, item) => {
+            batch.update(item.ref, { category: item.category });
+        });
         await logAuditEvent(db, {
             uid: user.uid,
             actor: user.email,
@@ -252,9 +266,13 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
             action: {
                 label: 'Späť',
                 onClick: async () => {
-                    for (const item of previousValues) {
-                        await updateDoc(doc(db, 'transactions', item.id), { category: item.category });
-                    }
+                    const rollbackRefs = previousValues.map((item) => ({
+                        ref: doc(db, 'transactions', item.id),
+                        category: item.category
+                    }));
+                    await runBatched(db, rollbackRefs, (batch, item) => {
+                        batch.update(item.ref, { category: item.category });
+                    });
                     await refreshDataCallback();
                 }
             }
@@ -268,11 +286,15 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
         if (!user || !value || selectedTransactionIds.size === 0) return;
 
         const previousValues = [];
+        const refsToUpdate = [];
         for (const id of selectedTransactionIds) {
             const original = lastRenderedTransactions.find((tx) => tx.id === id);
             if (original) previousValues.push({ id, account: original.account });
-            await updateDoc(doc(db, 'transactions', id), { account: value });
+            refsToUpdate.push({ ref: doc(db, 'transactions', id), account: value });
         }
+        await runBatched(db, refsToUpdate, (batch, item) => {
+            batch.update(item.ref, { account: item.account });
+        });
         await logAuditEvent(db, {
             uid: user.uid,
             actor: user.email,
@@ -286,9 +308,13 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
             action: {
                 label: 'Späť',
                 onClick: async () => {
-                    for (const item of previousValues) {
-                        await updateDoc(doc(db, 'transactions', item.id), { account: item.account });
-                    }
+                    const rollbackRefs = previousValues.map((item) => ({
+                        ref: doc(db, 'transactions', item.id),
+                        account: item.account
+                    }));
+                    await runBatched(db, rollbackRefs, (batch, item) => {
+                        batch.update(item.ref, { account: item.account });
+                    });
                     await refreshDataCallback();
                 }
             }
@@ -310,9 +336,10 @@ export function setupTransactionEvents(db, getUserCallback, getActiveYearCallbac
             .map((id) => lastRenderedTransactions.find((tx) => tx.id === id))
             .filter(Boolean);
 
-        for (const id of selectedTransactionIds) {
-            await deleteDoc(doc(db, 'transactions', id));
-        }
+        const refsToDelete = Array.from(selectedTransactionIds).map((id) => doc(db, 'transactions', id));
+        await runBatched(db, refsToDelete, (batch, ref) => {
+            batch.delete(ref);
+        });
         await logAuditEvent(db, {
             uid: user.uid,
             actor: user.email,

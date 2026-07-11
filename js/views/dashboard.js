@@ -6,13 +6,6 @@ const RECURRING_PANEL_STORAGE_KEY = 'finances_recurring_panel_collapsed';
 export function renderDashboard(transactions, config) {
     const stats = calculateTaxStats(transactions, config);
     
-    // DEBUG: Zobraziť príjmy z prenájmu
-    console.log("🏠 Príjmy z prenájmu:", stats.rentIncome);
-    const rentTransactions = transactions.filter(tx => 
-        tx.type === 'Príjem' && (tx.category || '').toLowerCase().includes('prenájom')
-    );
-    console.log("📋 Transakcie z prenájmu:", rentTransactions);
-    
     updateElement('summaryIncome', stats.income + stats.transportAllowance);
     updateElement('summaryRent', stats.rentIncome);
     updateElement('summaryExpenses', stats.rentExpenses);

@@ -5,12 +5,73 @@ import { showToast } from '../notifications.js';
 
 let chartInstance = null;
 let pieChartInstance = null;
+const scriptLoadPromises = new Map();
+const normalizedCategoryCache = new Map();
 
 function normalizeText(value) {
     return String(value || '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .toLowerCase();
+}
+
+function getNormalizedCategory(value) {
+    const key = String(value || '');
+    if (!normalizedCategoryCache.has(key)) {
+        normalizedCategoryCache.set(key, normalizeText(key));
+    }
+    return normalizedCategoryCache.get(key);
+}
+
+function matchesSelectedCategory(selectedCategories, normalizedCategory) {
+    if (selectedCategories.includes('mzda') && (normalizedCategory.includes('mzda') || normalizedCategory.includes('mv sr') || normalizedCategory.includes('prispevok na dopravu') || normalizedCategory.includes('prispevek na dopravu') || normalizedCategory.includes('dochodok'))) return true;
+    if (selectedCategories.includes('prenajom') && normalizedCategory.includes('prenajom')) return true;
+    if (selectedCategories.includes('dane') && (normalizedCategory.includes('poistenie') || normalizedCategory.includes('preddavok') || normalizedCategory.includes('dds'))) return true;
+    if (selectedCategories.includes('byvanie') && (normalizedCategory.includes('bytove') || normalizedCategory.includes('msu'))) return true;
+    if (selectedCategories.includes('energie') && (normalizedCategory.includes('zse') || normalizedCategory.includes('elektrina'))) return true;
+    if (selectedCategories.includes('tv') && (normalizedCategory.includes('4ka') || normalizedCategory.includes('telekom') || normalizedCategory.includes('internet'))) return true;
+    if (selectedCategories.includes('ine') && normalizedCategory.includes('ine')) return true;
+    return false;
+}
+
+function loadScriptOnce(src, globalName) {
+    if (globalName && typeof window[globalName] !== 'undefined') {
+        return Promise.resolve();
+    }
+
+    if (scriptLoadPromises.has(src)) {
+        return scriptLoadPromises.get(src);
+    }
+
+    const promise = new Promise((resolve, reject) => {
+        const existing = Array.from(document.querySelectorAll('script')).find((script) => script.src === src);
+        if (existing) {
+            existing.addEventListener('load', () => resolve(), { once: true });
+            existing.addEventListener('error', () => reject(new Error(`Nepodarilo sa načítať ${src}`)), { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`Nepodarilo sa načítať ${src}`));
+        document.body.appendChild(script);
+    });
+
+    scriptLoadPromises.set(src, promise);
+    return promise;
+}
+
+async function ensureExportLibraries() {
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'XLSX');
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js', 'pdfMake');
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js');
+    await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js', 'pdfjsLib');
+
+    if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
 }
 
 // Mapovanie systémových kategórií na čitateľné názvy pre reporty
@@ -61,13 +122,15 @@ export function setupReportEvents(db, getTransactionsCallback) {
     });
 
     // Export Excel
-    document.getElementById('exportExcelBtn').addEventListener('click', () => {
+    document.getElementById('exportExcelBtn').addEventListener('click', async () => {
         const transactions = getTransactionsCallback();
         const filtered = filterTransactions(transactions);
         if (filtered.length === 0) {
             showToast("Žiadne dáta na export", "warning");
             return;
         }
+
+        await ensureExportLibraries();
         
         showToast("Pripravujem Excel export...", "info");
 
@@ -89,13 +152,15 @@ export function setupReportEvents(db, getTransactionsCallback) {
     });
 
     // Export Štandardné PDF
-    document.getElementById('exportPdfBtn').addEventListener('click', () => {
+    document.getElementById('exportPdfBtn').addEventListener('click', async () => {
         const allTransactions = getTransactionsCallback();
         const filteredTx = filterTransactions(allTransactions);
         if (filteredTx.length === 0) {
             showToast("Žiadne dáta na export", "warning");
             return;
         }
+
+        await ensureExportLibraries();
         
         showToast("Pripravujem PDF report...", "info");
         exportMonthlyPdfReport(filteredTx);
@@ -103,8 +168,9 @@ export function setupReportEvents(db, getTransactionsCallback) {
     });
 
     // Export PDF pre prenájom
-    document.getElementById('exportTaxDraftBtn')?.addEventListener('click', () => {
+    document.getElementById('exportTaxDraftBtn')?.addEventListener('click', async () => {
         const transactions = getTransactionsCallback();
+        await ensureExportLibraries();
         showToast("Pripravujem PDF prenájom...", "info");
         exportRentPdfReport(transactions);
         showToast("PDF prenájom dokončený", "success");
@@ -137,16 +203,8 @@ function filterTransactions(transactions) {
         if (typeFilter !== 'all' && tx.type !== typeFilter) return false;
         if (selectedCategories.length === 0) return false;
 
-        const cat = normalizeText(tx.category);
-        let match = false;
-        if (selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('mv sr') || cat.includes('prispevok na dopravu') || cat.includes('prispevek na dopravu') || cat.includes('dochodok'))) match = true;
-        if (selectedCategories.includes('prenajom') && cat.includes('prenajom')) match = true;
-        if (selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
-        if (selectedCategories.includes('byvanie') && (cat.includes('bytove') || cat.includes('msu'))) match = true;
-        if (selectedCategories.includes('energie') && (cat.includes('zse') || cat.includes('elektrina'))) match = true;
-        if (selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
-        if (selectedCategories.includes('ine') && cat.includes('ine')) match = true;
-        return match;
+        const normalizedCategory = getNormalizedCategory(tx.category);
+        return matchesSelectedCategory(selectedCategories, normalizedCategory);
     }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -160,16 +218,8 @@ function filterTransactionsForMonth(transactions, monthKey) {
         if (!tx?.date || tx.date < monthFrom || tx.date > monthTo) return false;
         if (filters.typeFilter !== 'all' && tx.type !== filters.typeFilter) return false;
 
-        const cat = normalizeText(tx.category);
-        let match = false;
-        if (filters.selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('mv sr') || cat.includes('prispevok na dopravu') || cat.includes('prispevek na dopravu') || cat.includes('dochodok'))) match = true;
-        if (filters.selectedCategories.includes('prenajom') && cat.includes('prenajom')) match = true;
-        if (filters.selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
-        if (filters.selectedCategories.includes('byvanie') && (cat.includes('bytove') || cat.includes('msu'))) match = true;
-        if (filters.selectedCategories.includes('energie') && (cat.includes('zse') || cat.includes('elektrina'))) match = true;
-        if (filters.selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
-        if (filters.selectedCategories.includes('ine') && cat.includes('ine')) match = true;
-        return match;
+        const normalizedCategory = getNormalizedCategory(tx.category);
+        return matchesSelectedCategory(filters.selectedCategories, normalizedCategory);
     });
 }
 
