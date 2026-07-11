@@ -1,4 +1,4 @@
-const CACHE_NAME = 'danova-evidencia-v8';
+const CACHE_NAME = 'danova-evidencia-v9';
 
 // Zoznam súborov na statické cachovanie
 const ASSETS_TO_CACHE = [
@@ -13,6 +13,8 @@ const ASSETS_TO_CACHE = [
     './js/utils.js',
     './js/notifications.js',
     './js/yearManager.js',
+    './js/audit.js',
+    './js/importRules.js',
     './js/views/dashboard.js',
     './js/views/budget.js',
     './js/views/transactions.js',

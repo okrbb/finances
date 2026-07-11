@@ -80,7 +80,26 @@ function initLayoutShell() {
 }
 
 initLayoutShell();
+initOfflineStatusBanner();
 registerServiceWorker();
+
+function initOfflineStatusBanner() {
+    const banner = document.getElementById('offlineStatusBanner');
+    const label = document.getElementById('offlineStatusText');
+    if (!banner || !label) return;
+
+    const render = () => {
+        const isOnline = navigator.onLine;
+        banner.style.display = isOnline ? 'none' : 'block';
+        label.textContent = isOnline
+            ? 'Pripojenie obnovené.'
+            : 'Offline režim: nové ručné transakcie sa dočasne uložia lokálne.';
+    };
+
+    window.addEventListener('online', render);
+    window.addEventListener('offline', render);
+    render();
+}
 
 function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
@@ -119,6 +138,7 @@ onAuthStateChanged(auth, async (user) => {
         
         setupImportEvents(db, currentUser, refreshData);
         setupSalaryImport(db, currentUser, refreshData);
+        window.dispatchEvent(new Event('online'));
         refreshData();
     } else {
         currentUser = null;
@@ -488,7 +508,6 @@ async function refreshData() {
             orderBy("date", "desc")
             // REMOVE LIMIT pre aktuálny rok aby sa načítali všetky transakcie za rok
         );
-        
         const querySnapshot = await getDocs(q);
         
         // Kontrola či nie je request zastaraný

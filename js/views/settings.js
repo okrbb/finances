@@ -12,6 +12,8 @@ import {
     setDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { validateDIC, validateIBAN, validateAmount, confirmAction } from '../utils.js';
+import { parseImportRulesText } from '../importRules.js';
+import { fetchRecentAuditEvents, formatAuditTimestamp, logAuditEvent } from '../audit.js';
 
 export function initSettings(db, getUserCallback) {
     const settingsForm = document.getElementById('settingsForm');
@@ -19,6 +21,7 @@ export function initSettings(db, getUserCallback) {
     const ibanInput = document.getElementById('settingsIBAN');
     const taxRateInput = document.getElementById('configTaxRate');
     const rentExInput = document.getElementById('configRentExemption');
+    const importRulesInput = document.getElementById('importRulesText');
 
     dicInput?.addEventListener('blur', () => {
         const result = validateDIC(dicInput.value);
@@ -40,6 +43,11 @@ export function initSettings(db, getUserCallback) {
         rentExInput.classList.toggle('is-invalid', !result.valid);
     });
 
+    importRulesInput?.addEventListener('blur', () => {
+        const result = parseImportRulesText(importRulesInput.value);
+        importRulesInput.classList.toggle('is-invalid', !result.valid);
+    });
+
     if (settingsForm) {
         settingsForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -54,6 +62,7 @@ export function initSettings(db, getUserCallback) {
             const ibanValue = document.getElementById('settingsIBAN').value;
             const rentExValue = document.getElementById('configRentExemption').value;
             const taxRateValue = document.getElementById('configTaxRate').value;
+            const importRulesValue = document.getElementById('importRulesText')?.value || '';
             
             // Validácia DIČ
             const dicValidation = validateDIC(dicValue);
@@ -83,6 +92,12 @@ export function initSettings(db, getUserCallback) {
                 return;
             }
 
+            const importRulesValidation = parseImportRulesText(importRulesValue);
+            if (!importRulesValidation.valid) {
+                showToast(`Pravidlá importu majú chybný formát: ${importRulesValidation.invalidLines[0]}`, "warning");
+                return;
+            }
+
             const userData = {
                 name: document.getElementById('settingsName').value,
                 dic: dicValidation.value || dicValue,
@@ -90,11 +105,23 @@ export function initSettings(db, getUserCallback) {
                 iban: ibanValidation.value || ibanValue,
                 year: document.getElementById('settingsYear').value,
                 rentExemption: rentExValidation.value,
-                taxRate: taxRate
+                taxRate: taxRate,
+                importRulesText: importRulesValue
             };
             
             try {
-                await setDoc(doc(db, "users", user.uid), userData);
+                await setDoc(doc(db, "users", user.uid), userData, { merge: true });
+                await logAuditEvent(db, {
+                    uid: user.uid,
+                    actor: user.email,
+                    action: 'settings-save',
+                    entityType: 'settings',
+                    year: Number.parseInt(String(userData.year || ''), 10) || null,
+                    message: 'Používateľ uložil nastavenia profilu a pravidlá importu',
+                    metadata: {
+                        importRuleCount: importRulesValidation.rules.length
+                    }
+                });
                 showToast("Nastavenia úspešne uložené", "success");
                 loadUserProfile(user, db); 
             } catch (err) {
@@ -130,21 +157,52 @@ export async function loadUserProfile(user, db) {
             const setAddr = document.getElementById('settingsAddress');
             const setIban = document.getElementById('settingsIBAN');
             const setYear = document.getElementById('settingsYear');
+            const importRules = document.getElementById('importRulesText');
 
             if (setName) setName.value = data.name || '';
             if (setDic) setDic.value = data.dic || '';
             if (setAddr) setAddr.value = data.address || '';
             if (setIban) setIban.value = data.iban || '';
             if (setYear) setYear.value = data.year || '2025';
+            if (importRules) importRules.value = data.importRulesText || '';
 
             const setRentEx = document.getElementById('configRentExemption');
             const setTaxRate = document.getElementById('configTaxRate');
             if (setRentEx) setRentEx.value = data.rentExemption || 500;
             if (setTaxRate) setTaxRate.value = data.taxRate || 0.19;
         }
+
+        await renderRecentActivity(user, db);
     } catch (e) {
         console.error("Chyba pri načítaní profilu:", e);
     }
+}
+
+async function renderRecentActivity(user, db) {
+    const container = document.getElementById('recentActivityList');
+    if (!container) return;
+
+    const events = await fetchRecentAuditEvents(db, user.uid, 20);
+    if (events.length === 0) {
+        container.className = 'activity-feed empty';
+        container.innerHTML = '<div class="activity-empty">Zatiaľ bez zaznamenanej aktivity.</div>';
+        return;
+    }
+
+    container.className = 'activity-feed';
+    container.innerHTML = events.map((event) => `
+        <article class="activity-item">
+            <div class="activity-item-top">
+                <strong>${event.message || 'Systémová aktivita'}</strong>
+                <span>${formatAuditTimestamp(event.createdAt)}</span>
+            </div>
+            <div class="activity-item-meta">
+                <span>${event.actor || 'Používateľ'}</span>
+                <span>${event.action || 'update'}</span>
+                ${event.batchId ? `<span>Dávka: ${event.batchId}</span>` : ''}
+            </div>
+        </article>
+    `).join('');
 }
 
 export function setupBackup(db, getUserCallback, onRestoreComplete) {

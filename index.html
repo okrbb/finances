@@ -17,6 +17,10 @@
 <body>
     <a class="skip-link" href="#appContent">Preskočiť na obsah</a>
 
+    <div id="offlineStatusBanner" class="offline-banner" style="display:none;">
+        <span id="offlineStatusText">Offline režim: zmeny sa uložia a zosynchronizujú neskôr.</span>
+    </div>
+
     <div id="loadingOverlay" class="loading-overlay" style="display:none;">
         <div class="loader"></div>
         <span>Načítavam dáta...</span>
@@ -116,6 +120,18 @@
                             </ul>
                         </article>
 
+                        <article id="recurringPaymentsPanel" class="glass-panel p-6 bento-full recurring-panel">
+                            <div class="recurring-panel-head">
+                                <h3 class="card-title">Pravidelné platby</h3>
+                                <button id="toggleRecurringPaymentsBtn" class="recurring-toggle-btn" type="button" aria-expanded="true" aria-controls="recurringPaymentsSummary">
+                                    <i class="fa-solid fa-chevron-up"></i>
+                                </button>
+                            </div>
+                            <div id="recurringPaymentsSummary" class="recurring-payments-card">
+                                <div class="recurring-payments-empty">Zatiaľ nie sú vyhodnotené pravidelné platby.</div>
+                            </div>
+                        </article>
+
                         <article class="glass-panel p-6 bento-full">
                             <h3 class="card-title"><i class="fa-solid fa-scale-balanced"></i> Daňová kalkulačka</h3>
                             <div class="tax-grid">
@@ -175,7 +191,7 @@
                                         <option value="VD - bytové družstvo">VD - bytové družstvo</option>
                                         <option value="VD - MsÚ Trnava">VD - MsÚ Trnava</option>
                                         <option value="VD - ZSE">VD - ZSE</option>
-                                        <option value="VD - Telekom">VD - Telekom</option>
+                                        <option value="VD - internet">VD - internet</option>
                                         <option value="VD - 4ka">VD - 4ka</option>
                                         <option value="VD - poistenie">VD - poistenie</option>
                                         <option value="VD - preddavok na daň">VD - preddavok na daň</option>
@@ -189,12 +205,22 @@
                                 <input id="txNote" class="modern-input" type="text" placeholder="Napr. nájom za júl">
                             </div>
                             <div>
+                                <label for="txTags">Štítky</label>
+                                <input id="txTags" class="modern-input" type="text" placeholder="napr. dôležité, kontrola, prenájom">
+                            </div>
+                            <div class="span-2">
+                                <label for="txInternalNote">Interná poznámka</label>
+                                <textarea id="txInternalNote" class="modern-input form-textarea" rows="1" placeholder="Interná poznámka, ktorá nepôjde do reportov"></textarea>
+                            </div>
+                            <div>
                                 <label for="txAmount">Suma (€)</label>
                                 <input id="txAmount" class="modern-input" type="number" step="0.01" min="0" required>
                             </div>
                             <div class="form-actions">
                                 <button type="submit" class="btn btn-primary">Uložiť</button>
-                                <button type="button" id="cancelEditBtn" class="btn btn-secondary" style="display:none;">Zrušiť úpravu</button>
+                            </div>
+                            <div class="form-actions-cancel">
+                                <button type="button" id="cancelEditBtn" class="btn btn-secondary">Zrušiť úpravu</button>
                             </div>
                         </form>
                     </div>
@@ -202,28 +228,50 @@
                     <div class="glass-panel overflow-hidden">
                         <div class="table-head">
                             <h3>História transakcií</h3>
-                            <div class="search-inline">
-                                <i class="fa-solid fa-search"></i>
-                                <input id="searchTransactionInput" class="modern-input" type="text" placeholder="Hľadať...">
+                            <div class="table-head-controls">
+                                <div id="transactionsQuickFilters" class="quick-filters-row quick-filters-inline" role="group" aria-label="Rýchle filtre transakcií">
+                                    <button class="quick-filter-chip active" type="button" data-filter-group="type" data-filter-value="all">Všetko</button>
+                                    <button class="quick-filter-chip" type="button" data-filter-group="type" data-filter-value="Príjem">Príjmy</button>
+                                    <button class="quick-filter-chip" type="button" data-filter-group="type" data-filter-value="Výdaj">Výdavky</button>
+                                </div>
+                                <div class="search-inline">
+                                    <i class="fa-solid fa-search"></i>
+                                    <input id="searchTransactionInput" class="modern-input" type="text" placeholder="Hľadať...">
+                                </div>
                             </div>
                         </div>
-                        <div id="transactionsQuickFilters" class="quick-filters-row" role="group" aria-label="Rýchle filtre transakcií">
-                            <button class="quick-filter-chip active" type="button" data-filter-group="type" data-filter-value="all">Všetko</button>
-                            <button class="quick-filter-chip" type="button" data-filter-group="type" data-filter-value="Príjem">Príjmy</button>
-                            <button class="quick-filter-chip" type="button" data-filter-group="type" data-filter-value="Výdaj">Výdavky</button>
-                            <button class="quick-filter-chip" type="button" data-filter-group="account" data-filter-value="banka">Banka</button>
-                            <button class="quick-filter-chip" type="button" data-filter-group="account" data-filter-value="hotovosť">Hotovosť</button>
-                            <button class="quick-filter-chip" type="button" data-filter-group="period" data-filter-value="month">Tento mesiac</button>
+                        <div id="transactionBatchToolbar" class="transaction-batch-toolbar" style="display:none;">
+                            <span id="transactionBatchCount">0 označených</span>
+                            <div class="batch-control-group batch-control-group-wide">
+                                <select id="batchCategorySelect" class="modern-input batch-input">
+                                    <option value="">Kategória</option>
+                                </select>
+                                <button id="btnBatchApplyCategory" class="btn btn-secondary batch-apply-btn" type="button" title="Použiť vybranú kategóriu">Použiť</button>
+                            </div>
+                            <div class="batch-control-group">
+                                <select id="batchAccountSelect" class="modern-input batch-input">
+                                    <option value="">Účet</option>
+                                    <option value="banka">Banka</option>
+                                    <option value="hotovosť">Hotovosť</option>
+                                </select>
+                                <button id="btnBatchApplyAccount" class="btn btn-secondary batch-apply-btn" type="button" title="Použiť vybraný účet">Použiť</button>
+                            </div>
+                            <button id="btnBatchDelete" class="btn btn-secondary batch-danger-btn" type="button" title="Zmazať označené">Zmazať</button>
+                            <button id="btnBatchClear" class="btn btn-secondary batch-neutral-btn" type="button" title="Zrušiť výber">Zrušiť</button>
                         </div>
                         <div id="transactionsEmptyState" class="table-empty-state" style="display:none;">
                             <i class="fa-regular fa-folder-open"></i>
                             <h4>Žiadne transakcie na zobrazenie</h4>
-                            <p>Skús zmeniť filtre alebo pridaj novú transakciu.</p>
+                            <p id="transactionsEmptyMessage">Skús zmeniť filtre alebo pridaj novú transakciu.</p>
+                            <div class="table-empty-actions">
+                                <button id="btnResetTransactionFilters" class="btn btn-secondary" type="button">Vyčistiť filtre</button>
+                                <button id="btnJumpToImport" class="btn btn-secondary" type="button">Prejsť na import</button>
+                            </div>
                         </div>
                         <div class="table-wrap">
                             <table class="data-table">
                                 <thead>
-                                    <tr><th>Dátum</th><th>Doklad</th><th>Typ</th><th>Účet</th><th>Kategória</th><th>Poznámka</th><th>Príjem</th><th>Výdaj</th><th>Akcie</th></tr>
+                                    <tr><th>Výber</th><th data-sort="date">Dátum</th><th data-sort="type">Typ</th><th data-sort="account">Účet</th><th data-sort="category">Kategória</th><th data-sort="note">Poznámka</th><th data-sort="amount">Príjem</th><th data-sort="amount">Výdaj</th><th>Akcie</th></tr>
                                 </thead>
                                 <tbody id="transactionsList"></tbody>
                             </table>
@@ -438,6 +486,25 @@
                                 <div>IBAN: <span id="userAccount">-</span></div>
                             </div>
 
+                            <section class="settings-section">
+                                <div class="settings-section-head">
+                                    <h3>Pravidlá importu kategórií</h3>
+                                    <p>Každý riadok vo formáte výraz =&gt; kategória. Napr. swan =&gt; VD - 4ka</p>
+                                </div>
+                                <label for="importRulesText">Vlastné pravidlá</label>
+                                <textarea id="importRulesText" class="modern-input settings-textarea" rows="6" placeholder="swan => VD - 4ka&#10;radost => VD - internet&#10;energetika slovensko => VD - ZSE"></textarea>
+                            </section>
+
+                            <section class="settings-section">
+                                <div class="settings-section-head">
+                                    <h3>Posledná aktivita</h3>
+                                    <p>Importy, úpravy a uzávierky za posledné obdobie.</p>
+                                </div>
+                                <div id="recentActivityList" class="activity-feed empty">
+                                    <div class="activity-empty">Zatiaľ bez zaznamenanej aktivity.</div>
+                                </div>
+                            </section>
+
                             <div class="actions-row wrap">
                                 <button type="submit" class="btn btn-primary">Uložiť zmeny</button>
                                 <button id="btnExportBackup" class="btn btn-secondary" type="button">Stiahnuť kompletnú zálohu</button>
@@ -474,18 +541,64 @@
         <div class="modal-content wide" role="dialog" aria-modal="true">
             <div class="modal-header">
                 <h3>Náhľad importu</h3>
-                <div class="wizard-steps" id="importWizardSteps" aria-label="Kroky importu">
-                    <span class="wizard-step done">1. Súbor</span>
-                    <span class="wizard-step active">2. Validácia</span>
-                    <span class="wizard-step">3. Náhľad</span>
-                    <span class="wizard-step">4. Potvrdenie</span>
+                <div class="import-preview-header-tools">
+                    <div class="wizard-steps" id="importWizardSteps" aria-label="Kroky importu">
+                        <span class="wizard-step done">1. Súbor</span>
+                        <span class="wizard-step active">2. Validácia</span>
+                        <span class="wizard-step">3. Náhľad</span>
+                        <span class="wizard-step">4. Potvrdenie</span>
+                    </div>
+                    <div class="search-inline import-preview-search">
+                        <i class="fa-solid fa-search"></i>
+                        <input id="importPreviewSearchInput" class="modern-input" type="text" placeholder="Hľadať v náhľade importu...">
+                    </div>
                 </div>
             </div>
             <div class="modal-body">
-                <label class="remember-row"><input id="selectAllImport" type="checkbox" checked> <span>Označiť všetko</span></label>
+                <div id="importPreviewSummary" class="import-preview-summary" aria-label="Súhrn importu">
+                    <div class="import-summary-item">
+                        <span>Položky</span>
+                        <strong id="importSummaryTotalCount">0</strong>
+                    </div>
+                    <div class="import-summary-item">
+                        <span>Viditeľné</span>
+                        <strong id="importSummaryVisibleCount">0</strong>
+                    </div>
+                    <div class="import-summary-item">
+                        <span>Duplicity</span>
+                        <strong id="importSummaryDuplicateCount">0</strong>
+                    </div>
+                    <div class="import-summary-item">
+                        <span>Vybrané</span>
+                        <strong id="importSummarySelectedCount">0</strong>
+                    </div>
+                    <div class="import-summary-item positive">
+                        <span>Príjmy</span>
+                        <strong id="importSummaryIncome">0,00 €</strong>
+                    </div>
+                    <div class="import-summary-item negative">
+                        <span>Výdavky</span>
+                        <strong id="importSummaryExpense">0,00 €</strong>
+                    </div>
+                    <div class="import-summary-item">
+                        <span>Zlúčené páry</span>
+                        <strong id="importSummaryMergedCount">0</strong>
+                    </div>
+                </div>
+                <div class="import-preview-actions">
+                    <label class="remember-row"><input id="selectAllImport" type="checkbox"> <span>Označiť viditeľné</span></label>
+                    <div class="import-preview-buttons">
+                        <button id="btnSelectVisibleImport" class="btn btn-secondary" type="button">Vybrať viditeľné</button>
+                        <button id="btnSelectNewImport" class="btn btn-secondary" type="button">Vybrať len nové</button>
+                        <button id="btnClearImportSelection" class="btn btn-secondary" type="button">Odznačiť všetko</button>
+                        <button id="btnIgnoreImportFees" class="btn btn-secondary" type="button">Ignorovať poplatky</button>
+                        <button id="btnSelectLowConfidenceImport" class="btn btn-secondary" type="button">Vybrať nejasné</button>
+                    </div>
+                    <label class="remember-row"><input id="hideDuplicateImports" type="checkbox"> <span>Skryť duplicity</span></label>
+                </div>
                 <div class="table-wrap">
                     <table class="data-table">
-                        <thead><tr><th>Vybrať</th><th>Dátum</th><th>Popis</th><th>Suma</th><th>Kategória</th></tr></thead>
+                        <thead><tr><th>Vybrať</th><th>Dátum</th><th>Popis</th><th>Suma</th><th>Kategória</th><th>Istota</th><th>Kontrola</th></tr></thead>
                         <tbody id="importPreviewList"></tbody>
                     </table>
                 </div>
@@ -509,6 +622,20 @@
     </div>
 
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="transactionDetailModal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" role="dialog" aria-modal="true">
+            <div class="modal-header">
+                <h3>Detail poznámky</h3>
+            </div>
+            <div class="modal-body">
+                <div id="transactionDetailBody" class="transaction-detail-body"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btnCloseTransactionDetail" class="btn btn-secondary" type="button">Zatvoriť</button>
+            </div>
+        </div>
+    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>

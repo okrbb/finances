@@ -170,6 +170,7 @@ async function loadBudgetForMonth(user, db, yearMonth) {
 
         // Auto-vypocet prijmov z transakcii za mesiac (dochodok + prenajom)
         await syncAutoIncomeFromTransactions(user, db, yearMonth);
+        await syncAutoBudgetExpensesFromTransactions(user, db, yearMonth);
 
         calculateBudgetTotals();
     } catch (error) {
@@ -223,6 +224,70 @@ async function syncAutoIncomeFromTransactions(user, db, yearMonth) {
 
     if (rentInput) {
         rentInput.value = rentIncome.toFixed(2);
+    }
+}
+
+async function syncAutoBudgetExpensesFromTransactions(user, db, yearMonth) {
+    const [yearText] = yearMonth.split('-');
+    const year = parseInt(yearText, 10);
+    if (!year || Number.isNaN(year)) return;
+
+    const txQuery = query(
+        collection(db, 'transactions'),
+        where('uid', '==', user.uid),
+        where('year', '==', year)
+    );
+
+    const snapshot = await getDocs(txQuery);
+    const totals = {
+        exp_flat: 0,
+        exp_electric: 0,
+        exp_rtvs: 0,
+        exp_internet: 0,
+        exp_mobile: 0,
+        exp_bank: 0,
+        oth_insurance: 0
+    };
+
+    snapshot.forEach((txDoc) => {
+        const tx = txDoc.data();
+        if (tx.type !== 'Výdaj' || !tx.date || !String(tx.date).startsWith(`${yearMonth}-`)) {
+            return;
+        }
+
+        const category = (tx.category || '').toLowerCase();
+        const note = `${tx.note || ''} ${tx.internalNote || ''}`.toLowerCase();
+        const amount = parseFloat(tx.amount) || 0;
+
+        if (category.includes('bytové družstvo')) totals.exp_flat += amount;
+        else if (category.includes('zse')) totals.exp_electric += amount;
+        else if (category.includes('4ka')) totals.exp_rtvs += amount;
+        else if (category.includes('internet')) {
+            if (note.includes('radost') || note.includes('rados') || note.includes('telekom')) {
+                totals.exp_mobile += amount;
+            } else {
+                totals.exp_internet += amount;
+            }
+        } else if (category.includes('poistenie')) totals.oth_insurance += amount;
+        else if (note.includes('banka')) totals.exp_bank += amount;
+    });
+
+    let filledCount = 0;
+    Object.entries(totals).forEach(([field, value]) => {
+        if (!value) return;
+        const input = document.querySelector(`input[data-field="${field}"]`);
+        if (!input) return;
+        if (input.value === '' || Number(input.value) === 0) {
+            input.value = value.toFixed(2);
+            filledCount += 1;
+        }
+    });
+
+    if (filledCount > 0) {
+        const statusElem = document.getElementById('budgetStatus');
+        if (statusElem && !statusElem.textContent) {
+            statusElem.textContent = `Predvyplnené z transakcií: ${filledCount}`;
+        }
     }
 }
 

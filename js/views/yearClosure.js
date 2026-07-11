@@ -269,6 +269,26 @@ function renderValidationResults(results) {
         `;
         container.appendChild(statsCard);
     }
+
+    if (Array.isArray(results.checklist) && results.checklist.length > 0) {
+        const checklistCard = document.createElement('div');
+        checklistCard.className = 'validation-card checklist';
+        checklistCard.innerHTML = `
+            <h4><i class="fa-solid fa-list-check"></i> Kontrolný checklist</h4>
+            <div class="validation-checklist">
+                ${results.checklist.map((item) => `
+                    <div class="validation-check-item ${item.ok ? 'ok' : 'warn'}">
+                        <div>
+                            <strong>${item.label}</strong>
+                            <p>${item.detail}</p>
+                        </div>
+                        <i class="fa-solid ${item.ok ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        container.appendChild(checklistCard);
+    }
 }
 
 /**

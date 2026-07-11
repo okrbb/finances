@@ -13,6 +13,7 @@ import {
     addDoc
 } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { showToast } from './notifications.js';
+import { logAuditEvent } from './audit.js';
 
 /**
  * Migrácia existujúcich dát na year system
@@ -199,7 +200,8 @@ export async function validateYearClosure(year, user, db) {
         valid: true,
         warnings: [],
         errors: [],
-        stats: {}
+        stats: {},
+        checklist: []
     };
     
     try {
@@ -230,6 +232,25 @@ export async function validateYearClosure(year, user, db) {
         if (uncategorized.length > 0) {
             results.warnings.push(`${uncategorized.length} transakcií bez kategórie alebo s kategóriou "iné"`);
         }
+
+        const noteLess = transactions.filter((tx) => !String(tx.note || '').trim());
+        if (noteLess.length > 0) {
+            results.warnings.push(`${noteLess.length} transakcií bez poznámky`);
+        }
+
+        const signatureCounts = new Map();
+        transactions.forEach((tx) => {
+            const key = [
+                tx.date || '',
+                Number.parseFloat(tx.amount || 0).toFixed(2),
+                String(tx.note || '').trim().toLowerCase()
+            ].join('|');
+            signatureCounts.set(key, (signatureCounts.get(key) || 0) + 1);
+        });
+        const duplicateLikeCount = Array.from(signatureCounts.values()).filter((count) => count > 1).length;
+        if (duplicateLikeCount > 0) {
+            results.warnings.push(`Možné duplicity podľa dátumu, sumy a poznámky: ${duplicateLikeCount}`);
+        }
         
         // 4. Kontrola pokrytia mesiacov
         const months = new Set();
@@ -252,6 +273,12 @@ export async function validateYearClosure(year, user, db) {
             const userData = userDoc.data();
             if (!userData.dic) results.warnings.push("DIČ nie je vyplnené");
             if (!userData.iban) results.warnings.push("IBAN nie je vyplnený");
+
+            results.checklist.push({
+                label: 'Profil a identifikácia',
+                ok: Boolean(userData.dic && userData.iban),
+                detail: userData.dic && userData.iban ? 'DIČ a IBAN sú vyplnené' : 'Skontroluj DIČ alebo IBAN v nastaveniach'
+            });
         }
         
         // 6. Štatistiky
@@ -266,6 +293,38 @@ export async function validateYearClosure(year, user, db) {
         results.stats.totalIncome = income;
         results.stats.totalExpenses = expenses;
         results.stats.balance = income - expenses;
+        results.stats.uncategorizedCount = uncategorized.length;
+        results.stats.noteLessCount = noteLess.length;
+        results.stats.duplicateLikeCount = duplicateLikeCount;
+        results.stats.reportReady = transactions.length > 0;
+
+        results.checklist.push(
+            {
+                label: 'Počet transakcií',
+                ok: transactions.length > 0,
+                detail: `${transactions.length} položiek v roku ${year}`
+            },
+            {
+                label: 'Kategórie',
+                ok: uncategorized.length === 0,
+                detail: uncategorized.length === 0 ? 'Všetky položky majú špecifickú kategóriu' : `${uncategorized.length} položiek je v kategórii iné`
+            },
+            {
+                label: 'Poznámky',
+                ok: noteLess.length === 0,
+                detail: noteLess.length === 0 ? 'Každá položka má poznámku' : `${noteLess.length} položiek je bez poznámky`
+            },
+            {
+                label: 'Možné duplicity',
+                ok: duplicateLikeCount === 0,
+                detail: duplicateLikeCount === 0 ? 'Nenašli sa zjavné duplicity' : `${duplicateLikeCount} podpisov vyzerá duplicitne`
+            },
+            {
+                label: 'Exporty',
+                ok: transactions.length > 0,
+                detail: transactions.length > 0 ? 'Report a záloha sa dajú exportovať' : 'Bez transakcií nie je čo exportovať'
+            }
+        );
         
     } catch (error) {
         console.error("Chyba pri validácii:", error);
@@ -334,6 +393,16 @@ export async function closeYear(year, user, db) {
             archivedYears: archivedYears,
             yearClosureDates: yearClosureDates
         }, { merge: true });
+
+        await logAuditEvent(db, {
+            uid: user.uid,
+            actor: user.email,
+            action: 'year-close',
+            entityType: 'year-closure',
+            year,
+            message: `Uzavretý rok ${year} a aktivovaný rok ${newYear}`,
+            metadata: validation.stats
+        });
         
         console.log(`✅ Rok ${year} úspešne uzavretý`);
         
@@ -419,6 +488,15 @@ export async function unlockYear(year, user, db) {
             archivedYears: archivedYears,
             yearClosureDates: yearClosureDates
         }, { merge: true });
+
+        await logAuditEvent(db, {
+            uid: user.uid,
+            actor: user.email,
+            action: 'year-unlock',
+            entityType: 'year-closure',
+            year,
+            message: `Odomknutý rok ${year}`
+        });
         
         // 2. Označiť všetky transakcie ako ne-archived
         const txQuery = query(

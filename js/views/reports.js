@@ -15,6 +15,7 @@ function normalizeText(value) {
 
 // Mapovanie systémových kategórií na čitateľné názvy pre reporty
 const categoryMap = {
+    "VD - internet": "VD - internet",
     "VD - Telekom": "VD - internet",
     "VD - 4ka": "VD - TV",
     "PD - mzda": "Mzda",
@@ -149,12 +150,122 @@ function filterTransactions(transactions) {
     }).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+function filterTransactionsForMonth(transactions, monthKey) {
+    const monthFrom = `${monthKey}-01`;
+    const monthDate = new Date(`${monthKey}-01T00:00:00`);
+    const monthTo = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).toISOString().split('T')[0];
+    const filters = getFilters();
+
+    return transactions.filter((tx) => {
+        if (!tx?.date || tx.date < monthFrom || tx.date > monthTo) return false;
+        if (filters.typeFilter !== 'all' && tx.type !== filters.typeFilter) return false;
+
+        const cat = normalizeText(tx.category);
+        let match = false;
+        if (filters.selectedCategories.includes('mzda') && (cat.includes('mzda') || cat.includes('mv sr') || cat.includes('prispevok na dopravu') || cat.includes('prispevek na dopravu') || cat.includes('dochodok'))) match = true;
+        if (filters.selectedCategories.includes('prenajom') && cat.includes('prenajom')) match = true;
+        if (filters.selectedCategories.includes('dane') && (cat.includes('poistenie') || cat.includes('preddavok') || cat.includes('dds'))) match = true;
+        if (filters.selectedCategories.includes('byvanie') && (cat.includes('bytove') || cat.includes('msu'))) match = true;
+        if (filters.selectedCategories.includes('energie') && (cat.includes('zse') || cat.includes('elektrina'))) match = true;
+        if (filters.selectedCategories.includes('tv') && (cat.includes('4ka') || cat.includes('telekom') || cat.includes('internet'))) match = true;
+        if (filters.selectedCategories.includes('ine') && cat.includes('ine')) match = true;
+        return match;
+    });
+}
+
+function summarizeTransactions(transactions) {
+    return transactions.reduce((summary, tx) => {
+        if (tx.type === 'Príjem') {
+            summary.income += Number(tx.amount) || 0;
+        } else {
+            summary.expense += Number(tx.amount) || 0;
+        }
+        return summary;
+    }, { income: 0, expense: 0 });
+}
+
+function getLatestMonthKey(transactions) {
+    const sorted = transactions
+        .map((tx) => String(tx.date || '').slice(0, 7))
+        .filter(Boolean)
+        .sort();
+    return sorted[sorted.length - 1] || '';
+}
+
+function shiftMonth(monthKey, offset) {
+    if (!monthKey) return '';
+    const [year, month] = monthKey.split('-').map(Number);
+    const date = new Date(year, (month - 1) + offset, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function buildReportInsights(allTransactions, filteredTransactions) {
+    const activeMonth = getLatestMonthKey(filteredTransactions);
+    if (!activeMonth) {
+        return { cards: [], anomalies: [] };
+    }
+
+    const currentSummary = summarizeTransactions(filterTransactionsForMonth(allTransactions, activeMonth));
+    const previousSummary = summarizeTransactions(filterTransactionsForMonth(allTransactions, shiftMonth(activeMonth, -1)));
+    const previousYearSummary = summarizeTransactions(filterTransactionsForMonth(allTransactions, shiftMonth(activeMonth, -12)));
+
+    const cards = [
+        {
+            label: 'Mesiac',
+            value: activeMonth.split('-').reverse().join('/'),
+            detail: `Bilancia ${formatCurrencySK(currentSummary.income - currentSummary.expense)}`
+        },
+        {
+            label: 'Vs. predch. mesiac',
+            value: formatCurrencySK((currentSummary.income - currentSummary.expense) - (previousSummary.income - previousSummary.expense)),
+            detail: `${formatCurrencySK(previousSummary.income - previousSummary.expense)} predtým`
+        },
+        {
+            label: 'Vs. min. rok',
+            value: formatCurrencySK((currentSummary.income - currentSummary.expense) - (previousYearSummary.income - previousYearSummary.expense)),
+            detail: `${formatCurrencySK(previousYearSummary.income - previousYearSummary.expense)} v rovnakom mesiaci`
+        }
+    ];
+
+    const categoryAverages = new Map();
+    allTransactions.forEach((tx) => {
+        const key = `${tx.type}|${tx.category}`;
+        if (!categoryAverages.has(key)) {
+            categoryAverages.set(key, []);
+        }
+        categoryAverages.get(key).push(Number(tx.amount) || 0);
+    });
+
+    const anomalies = filteredTransactions
+        .map((tx) => {
+            const key = `${tx.type}|${tx.category}`;
+            const values = categoryAverages.get(key) || [];
+            if (values.length < 3) return null;
+            const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+            const amount = Number(tx.amount) || 0;
+            if (average <= 0 || amount < average * 1.75) return null;
+            return {
+                date: tx.date,
+                category: categoryMap[tx.category] || tx.category,
+                note: tx.note || '-',
+                amount,
+                average
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => right.amount - left.amount)
+        .slice(0, 5);
+
+    return { cards, anomalies };
+}
+
 function updateReportUI(allTransactions) {
     const filtered = filterTransactions(allTransactions);
     let totalIncome = 0, totalExpense = 0;
     filtered.forEach(tx => tx.type === 'Príjem' ? totalIncome += tx.amount : totalExpense += tx.amount);
     const balance = totalIncome - totalExpense;
     const periodLabel = getReportPeriodLabel();
+    const insights = buildReportInsights(allTransactions, filtered);
 
     let html = `
         <section class="report-summary">
@@ -177,6 +288,35 @@ function updateReportUI(allTransactions) {
                 </article>
             </div>
         </section>`;
+
+    if (insights.cards.length > 0) {
+        html += `
+        <section class="report-insights-grid">
+            ${insights.cards.map((card) => `
+                <article class="report-insight-card">
+                    <span>${card.label}</span>
+                    <strong>${card.value}</strong>
+                    <small>${card.detail}</small>
+                </article>
+            `).join('')}
+        </section>`;
+    }
+
+    if (insights.anomalies.length > 0) {
+        html += `
+        <section class="report-anomalies">
+            <h4>Možné odchýlky</h4>
+            <div class="report-anomalies-list">
+                ${insights.anomalies.map((item) => `
+                    <article class="report-anomaly-item">
+                        <strong>${formatDate(item.date)} • ${item.category}</strong>
+                        <span>${item.note}</span>
+                        <span>${formatCurrencySK(item.amount)} oproti priemeru ${formatCurrencySK(item.average)}</span>
+                    </article>
+                `).join('')}
+            </div>
+        </section>`;
+    }
 
     if (filtered.length === 0) {
         html += `

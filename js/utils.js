@@ -230,7 +230,7 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
                 income += amount;
             }
         } else {
-            if (category.includes('bytové družstvo') || category.includes('telekom') || category.includes('4ka') || category.includes('zse') || category.includes('msú trnava') || category.includes('vd - iné')) {
+            if (category.includes('bytové družstvo') || category.includes('telekom') || category.includes('internet') || category.includes('4ka') || category.includes('zse') || category.includes('msú trnava') || category.includes('vd - iné')) {
                 rentExpenses += amount;
             }
             if (category.includes('poistenie')) insurance += amount;
