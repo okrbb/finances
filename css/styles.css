@@ -981,7 +981,7 @@ body[data-theme='ledger'] .nav-item.active {
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
-.transaction-batch-toolbar .btn.btn-secondary:hover {
+.transaction-batch-toolbar .btn.btn-secondary:hover:not(.batch-danger-btn) {
     border-color: #bfcddd;
     background: #f8fbff;
 }
@@ -995,17 +995,30 @@ body[data-theme='ledger'] .nav-item.active {
 }
 
 .batch-danger-btn {
-    color: #b91c1c;
-    background: linear-gradient(180deg, #fff5f5 0%, #fee2e2 100%);
-    border-color: #f3b4b4;
+    color: #991b1b;
+    background: linear-gradient(180deg, #fff1f2 0%, #fecaca 100%);
+    border-color: #e8a8a8;
     box-shadow: 0 4px 12px rgba(220, 38, 38, 0.12);
 }
 
-.batch-danger-btn:hover {
+.batch-danger-btn:hover,
+.batch-danger-btn:focus-visible {
     color: #ffffff;
     background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
     border-color: #dc2626;
     box-shadow: 0 10px 22px rgba(220, 38, 38, 0.22);
+}
+
+.transaction-batch-toolbar .btn:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+}
+
+.transaction-batch-toolbar .btn.batch-danger-btn:disabled {
+    color: #7f1d1d;
+    background: linear-gradient(180deg, #fff1f2 0%, #fecaca 100%);
+    border-color: #e8a8a8;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.1);
 }
 
 .data-table {

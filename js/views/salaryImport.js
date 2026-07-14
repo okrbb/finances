@@ -43,7 +43,7 @@ export function setupSalaryImport(db, user, refreshCallback) {
                 if (!textContent?.items?.length) {
                     showToast("PDF neobsahuje čitateľný text (pravdepodobne sken).", "warning");
                 }
-                const fullText = textContent.items.map(item => item.str).join(' ');
+                const fullText = textContent.items.map((item) => `${item.str}${item.hasEOL ? '\n' : ' '}`).join('');
 
                 // HLAVNÁ ZMENA: Volanie novej robustnej funkcie
                 const extracted = parseSalaryText(fullText);
@@ -121,6 +121,30 @@ function parseSalaryText(text) {
         return parseFloat(cleaned) || 0;
     };
 
+    const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+    const floor2 = (value) => Math.floor((Number(value) || 0) * 100) / 100;
+
+    const lines = String(text || '')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+    const extractNumbers = (line) => (String(line || '').match(/[\d][\d\s,.]*/g) || [])
+        .map((value) => cleanNum(value))
+        .filter((value) => Number.isFinite(value) && value > 0);
+
+    const extractLineAmount = (line, labelPattern) => {
+        const normalizedLine = String(line || '').replace(/\s+/g, ' ').trim();
+        const match = normalizedLine.match(labelPattern);
+        if (!match) return 0;
+
+        let tail = normalizedLine.slice((match.index || 0) + match[0].length);
+        tail = tail.replace(/\(VZ:[^)]+\)/i, ' ');
+        const numbers = extractNumbers(tail);
+        return numbers[0] || 0;
+    };
+
     const parseMonthYearFromText = (rawText) => {
         const monthAliases = {
             januar: '01', jan: '01',
@@ -169,52 +193,87 @@ function parseSalaryText(text) {
     let dateStr = parsedDate || new Date().toISOString().split('T')[0];
 
     const results = [];
+    let grossAmount = 0;
 
     // 2. Hrubý príjem (Robustné zachytenie tisícok)
     const grossMatch = text.match(/HRUB[ÝY]\s+PR[ÍI]JEM\s+([\d\s,.]+)/i);
     if (grossMatch) {
-        results.push({ date: dateStr, type: 'Príjem', category: 'PD - MV SR', amount: cleanNum(grossMatch[1]), note: 'hrubá mzda' });
+        grossAmount = cleanNum(grossMatch[1]);
+        results.push({ date: dateStr, type: 'Príjem', category: 'PD - MV SR', amount: grossAmount, note: 'hrubá mzda' });
     }
 
-    // 3. Poistné a Daň (Univerzálny regex pre riadok s hodnotami)
-    // Na páske je riadok v tvare: | 423,07 | | 519,52 | |
-    // Tento regex hľadá presne túto štruktúru bez ohľadu na konkrétne sumy
-    const tableRowMatch = text.match(/\|\s*([\d\s,.]+)\s*\|\s*\|\s*([\d\s,.]+)\s*\|\s*\|/);
-    
-    if (tableRowMatch) {
-        const insuranceVal = cleanNum(tableRowMatch[1]);
-        const taxVal = cleanNum(tableRowMatch[2]);
+    // 3. Jednotlivé poistné položky a preddavok na daň z pásky
+    const detailedContributions = [
+        { label: /Zdrav\.p\.?/i, category: 'VD - Zdrav.p.', note: 'Zdrav.p.' },
+        { label: /Nemoc\.p\.?/i, category: 'VD - Nemoc.p.', note: 'Nemoc.p.' },
+        { label: /Staro\.p\.?/i, category: 'VD - Staro.p.', note: 'Staro.p.' },
+        { label: /Fon\.zam\.?/i, category: 'VD - Fon.zam.', note: 'Fon.zam.' },
+        { label: /Invali\.p\.?/i, category: 'VD - Invali.p.', note: 'Invali.p.' }
+    ];
 
-        if (insuranceVal > 0) {
-            results.push({ date: dateStr, type: 'Výdaj', category: 'VD - poistenie', amount: insuranceVal, note: 'odvody' });
+    let detailedContributionCount = 0;
+    const detailedLineIndexes = new Set();
+
+    lines.forEach((line, index) => {
+        detailedContributions.forEach(({ label, category, note }) => {
+            if (label.test(line)) {
+                const amount = extractLineAmount(line, label);
+                if (amount > 0) {
+                    detailedContributionCount += 1;
+                    detailedLineIndexes.add(index);
+                    results.push({ date: dateStr, type: 'Výdaj', category, amount, note });
+                }
+            }
+        });
+    });
+
+    let taxAdvance = 0;
+    const taxLabelIndex = lines.findIndex((line) => /Daň\s*pre\.?/i.test(line));
+    if (taxLabelIndex >= 0) {
+        for (let index = taxLabelIndex + 1; index < Math.min(lines.length, taxLabelIndex + 4); index += 1) {
+            const numbers = extractNumbers(lines[index]);
+            if (numbers.length >= 2) {
+                taxAdvance = numbers[1];
+                break;
+            }
+            if (numbers.length === 1 && taxAdvance === 0) {
+                taxAdvance = numbers[0];
+            }
         }
-        if (taxVal > 0) {
-            results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: taxVal, note: 'preddavok na daň' });
+    }
+
+    if (taxAdvance > 0) {
+        results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: taxAdvance, note: 'preddavok na daň' });
+    }
+
+    // 4. DDS ZC (príspevok zamestnanca)
+    const ddsZcMatch = text.match(/DDS\s+ZC\s+([\d\s,.]+)/i);
+    if (ddsZcMatch) {
+        const ddsAmount = cleanNum(ddsZcMatch[1]);
+        if (ddsAmount > 0) {
+            results.push({ date: dateStr, type: 'Výdaj', category: 'VD - DDS', amount: ddsAmount, note: 'príspevok DDS' });
         }
-    } else {
-        // Fallback pre pásky, ktoré nemajú tabuľku s oddeľovačmi "|"
+    }
+
+    if (detailedContributionCount === 0 || taxAdvance === 0) {
         const insuranceMatch = text.match(/POISTN[ÉE][^\d]*([\d\s,.]+)/i);
-        const taxMatch = text.match(/PREDDAVOK\s+NA\s+DA[NŇ][^\d]*([\d\s,.]+)/i);
-
         if (insuranceMatch) {
             const insuranceVal = cleanNum(insuranceMatch[1]);
-            if (insuranceVal > 0) {
-                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - poistenie', amount: insuranceVal, note: 'odvody' });
+            if (insuranceVal > 0 && grossAmount > 0) {
+                const health = floor2(grossAmount * 0.05);
+                const nemocenske = floor2(grossAmount * 0.014);
+                const starobne = floor2(grossAmount * 0.04);
+                const fondZam = floor2(grossAmount * 0.01);
+                const invalidne = floor2(grossAmount * 0.03);
+                const social = nemocenske + starobne + fondZam + invalidne;
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - Zdrav.p.', amount: health, note: 'Zdrav.p.' });
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - Nemoc.p.', amount: nemocenske, note: 'Nemoc.p.' });
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - Staro.p.', amount: starobne, note: 'Staro.p.' });
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - Fon.zam.', amount: fondZam, note: 'Fon.zam.' });
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - Invali.p.', amount: invalidne, note: 'Invali.p.' });
+                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: round2((grossAmount - social - health) * 0.19), note: 'preddavok na daň' });
             }
         }
-
-        if (taxMatch) {
-            const taxVal = cleanNum(taxMatch[1]);
-            if (taxVal > 0) {
-                results.push({ date: dateStr, type: 'Výdaj', category: 'VD - preddavok na daň', amount: taxVal, note: 'preddavok na daň' });
-            }
-        }
-    }
-
-    // 4. DDS ZC
-    const ddsMatch = text.match(/DDS ZC\s+([\d\s,.]+)/i);
-    if (ddsMatch) {
-        results.push({ date: dateStr, type: 'Výdaj', category: 'VD - DDS', amount: cleanNum(ddsMatch[1]), note: 'príspevok DDS' });
     }
 
     return results;

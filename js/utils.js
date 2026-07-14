@@ -90,6 +90,52 @@ export function confirmAction(message, title = "Potvrdenie") {
     });
 }
 
+export function promptDDSAmount() {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('ddsAmountModal');
+        const input = document.getElementById('ddsAmountInput');
+        const confirmBtn = document.getElementById('ddsConfirmBtn');
+        const cancelBtn = document.getElementById('ddsCancelBtn');
+        
+        if (!modal) {
+            resolve(0);
+            return;
+        }
+        
+        // Reset input
+        input.value = '0.00';
+        input.focus();
+        modal.style.display = 'flex';
+        
+        const handleConfirm = () => {
+            const ddsAmount = parseFloat(input.value) || 0;
+            cleanup();
+            resolve(Math.max(0, ddsAmount));
+        };
+        
+        const handleCancel = () => {
+            cleanup();
+            resolve(0);
+        };
+        
+        const handleKeypress = (e) => {
+            if (e.key === 'Enter') handleConfirm();
+            if (e.key === 'Escape') handleCancel();
+        };
+        
+        const cleanup = () => {
+            modal.style.display = 'none';
+            confirmBtn.removeEventListener('click', handleConfirm);
+            cancelBtn.removeEventListener('click', handleCancel);
+            input.removeEventListener('keypress', handleKeypress);
+        };
+        
+        confirmBtn.addEventListener('click', handleConfirm);
+        cancelBtn.addEventListener('click', handleCancel);
+        input.addEventListener('keypress', handleKeypress);
+    });
+}
+
 export function updateElement(elementId, value, currency = '€') {
     const element = document.getElementById(elementId);
     if (element) {
@@ -205,11 +251,19 @@ export function validateIBAN(iban) {
 
 // Tu je vaša funkcia calculateTaxStats (extrahovaná)
 export function calculateTaxStats(transactions, config = { rentExemption: 500, taxRate: 0.19 }) {
+    const COMBINED_INSURANCE_RATE = 0.144;
+    const SOCIAL_INSURANCE_RATE = 0.094;
+    const HEALTH_INSURANCE_RATE = 0.05;
+    const SOCIAL_SHARE = SOCIAL_INSURANCE_RATE / COMBINED_INSURANCE_RATE;
+    const HEALTH_SHARE = HEALTH_INSURANCE_RATE / COMBINED_INSURANCE_RATE;
+
     let income = 0; 
     let rentIncome = 0; 
     let expenses = 0; 
     let rentExpenses = 0; 
     let pension = 0;
+    let socialContrib = 0;
+    let healthContrib = 0;
     let insurance = 0;
     let taxAdvance = 0;
     let dds = 0;
@@ -233,7 +287,14 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
             if (category.includes('bytové družstvo') || category.includes('telekom') || category.includes('internet') || category.includes('4ka') || category.includes('zse') || category.includes('msú trnava') || category.includes('vd - iné')) {
                 rentExpenses += amount;
             }
-            if (category.includes('poistenie')) insurance += amount;
+            if (category.includes('zdrav.p') || category.includes('zdravot')) {
+                healthContrib += amount;
+            } else if (category.includes('nemoc.p') || category.includes('staro.p') || category.includes('fon.zam') || category.includes('invali.p') || category.includes('sociáln') || category.includes('social')) {
+                socialContrib += amount;
+            } else if (category.includes('poistenie')) {
+                socialContrib += amount * SOCIAL_SHARE;
+                healthContrib += amount * HEALTH_SHARE;
+            }
             if (category.includes('preddavok')) taxAdvance += amount;
             if (category.includes('dds')) dds += amount;
             expenses += amount;
@@ -255,6 +316,7 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
 
     const taxBaseRent = taxableRentIncome - deductibleRentExpenses;
     const taxBaseIncome = income + transportAllowance;
+    insurance = socialContrib + healthContrib;
     let taxBase = taxBaseRent + taxBaseIncome - dds;
     if (taxBase < 0) taxBase = 0;
 
@@ -276,7 +338,7 @@ export function calculateTaxStats(transactions, config = { rentExemption: 500, t
     const profitBeforeTax = totalRealIncome - expenses;
 
     return {
-        income, rentIncome, expenses, rentExpenses, pension, insurance, taxAdvance, dds,
+        income, rentIncome, expenses, rentExpenses, pension, insurance, socialContrib, healthContrib, taxAdvance, dds,
         transportAllowance, // Nový údaj pre zobrazenie
         taxBaseRent, taxBaseIncome: partialTaxBaseWage, taxBase: finalTaxBase,
         profitBeforeTax, taxToPay,

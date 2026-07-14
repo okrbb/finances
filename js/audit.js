@@ -31,6 +31,9 @@ export async function fetchRecentAuditEvents(db, uid, maxItems = 20) {
             .sort((left, right) => String(right.createdAt || '').localeCompare(String(left.createdAt || '')))
             .slice(0, maxItems);
     } catch (error) {
+        if (error?.code === 'permission-denied') {
+            return [];
+        }
         console.error('Fetch audit logs error:', error);
         return [];
     }

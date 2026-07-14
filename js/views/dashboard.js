@@ -9,8 +9,8 @@ export function renderDashboard(transactions, config) {
     updateElement('summaryIncome', stats.income + stats.transportAllowance);
     updateElement('summaryRent', stats.rentIncome);
     updateElement('summaryExpenses', stats.rentExpenses);
-    updateElement('summaryPension', stats.pension);
-    updateElement('summaryInsurance', stats.insurance);
+    updateElement('summarySocialContrib', stats.socialContrib);
+    updateElement('summaryHealthContrib', stats.healthContrib);
     updateElement('summaryTaxAdvance', stats.taxAdvance);
     updateElement('summaryDDS', stats.dds);
     updateElement('taxBaseRent', stats.taxBaseRent);

@@ -1,4 +1,4 @@
-const APP_VERSION = 'v11';
+const APP_VERSION = 'v12';
 const STATIC_CACHE = `danova-evidencia-static-${APP_VERSION}`;
 const DYNAMIC_CACHE = `danova-evidencia-dynamic-${APP_VERSION}`;
 const OFFLINE_FALLBACK_URL = './index.html';
